@@ -54,7 +54,7 @@ export default function RechargeRecordsPage() {
               <div key={row.order_no} className="rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">订单号：{row.order_no}</p>
-                  <p className="text-sm text-emerald-600">+{row.charm_gain}</p>
+                  <p className="text-sm text-emerald-600">¥{row.amount_cny ?? 0}</p>
                 </div>
                 <div className="mt-1 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
                   <span>{row.channel === 'wechat' ? '微信支付' : row.channel === 'alipay' ? '支付宝' : '-'}</span>
