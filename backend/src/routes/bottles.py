@@ -38,13 +38,8 @@ async def throw_bottle(
             detail="用户不存在"
         )
 
-    # 检查权限
+    # 扔瓶子不做魅力值门槛限制
     charm_value = user["charm_value"]
-    if not check_feature_permission(charm_value, "throw_bottle"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="您的魅力值不足，无法使用扔瓶子功能（需要≥50）"
-        )
 
     # 检查每日使用次数
     today_key = get_today_key(user_id, "throw_bottle")
@@ -112,13 +107,8 @@ async def pick_bottle(
             detail="用户不存在"
         )
 
-    # 检查权限
+    # 捞瓶子不做魅力值门槛限制
     charm_value = user["charm_value"]
-    if not check_feature_permission(charm_value, "pick_bottle"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="您的魅力值不足，无法使用捞瓶子功能（需要≥50）"
-        )
 
     # 检查每日使用次数
     today_key = get_today_key(user_id, "pick_bottle")
@@ -163,15 +153,15 @@ async def pick_bottle(
 
     # 更新瓶子捞取次数
     new_pick_count = bottle["pick_count"] + 1
-    status = "active"
+    bottle_status = "active"
 
     if new_pick_count >= bottle["max_pick_count"]:
-        status = "expired"
+        bottle_status = "expired"
         await redis.srem("bottle_pool", selected_bottle_id)
 
     await db["bottles"].update_one(
         {"id": selected_bottle_id},
-        {"$set": {"pick_count": new_pick_count, "status": status}}
+        {"$set": {"pick_count": new_pick_count, "status": bottle_status}}
     )
 
     # 记录捞取记录

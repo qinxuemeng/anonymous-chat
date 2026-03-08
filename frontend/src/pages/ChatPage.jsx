@@ -1,50 +1,69 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import BottomNav from '../components/BottomNav'
 import ChatCard from '../components/ChatCard'
 import { Search } from 'lucide-react'
+import { api } from '../services/api'
 
 export default function ChatPage() {
-  const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const [chats, setChats] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  // 模拟数据
-  const mockChats = [
-    {
-      id: '1',
-      name: '神秘人',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=1',
-      message: '你好！很高兴认识你',
-      time: '5分钟前',
-      unreadCount: 2,
-    },
-    {
-      id: '2',
-      name: '匿名用户',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=2',
-      message: '今天天气真不错呢',
-      time: '1小时前',
-      unreadCount: 0,
-    },
-    {
-      id: '3',
-      name: '过客',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=3',
-      message: '好的，下次再聊',
-      time: '昨天',
-      unreadCount: 0,
-    },
-  ]
+  const formatTime = (timeStr) => {
+    if (!timeStr) return ''
+    const d = new Date(timeStr)
+    if (Number.isNaN(d.getTime())) return ''
+    const now = new Date()
+    const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000)
+    if (diffSec < 60) return '刚刚'
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}分钟前`
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}小时前`
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  const loadConversations = async () => {
+    try {
+      const response = await api.get('/chats/conversations')
+      if (response.data?.success) {
+        const list = response.data.data?.conversations || []
+        setChats(list.map((item) => ({
+          id: item.user_id,
+          name: item.nickname || '神秘人',
+          avatar: item.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.user_id}`,
+          message: item.last_message || '',
+          time: formatTime(item.last_message_at),
+          unreadCount: item.unread_count || 0,
+          isOnline: !!item.is_online,
+        })))
+      }
+    } catch (error) {
+      console.error('获取会话列表失败:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    // 这里应该从API获取聊天列表
-    setChats(mockChats)
+    loadConversations()
+    const timer = setInterval(loadConversations, 5000)
+    return () => clearInterval(timer)
   }, [])
 
   const filteredChats = chats.filter((chat) =>
     chat.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  const handleDeleteConversation = async (targetUserId, name) => {
+    const ok = window.confirm(`确定删除与 ${name || '该用户'} 的会话吗？`)
+    if (!ok) return
+    try {
+      await api.delete(`/chats/conversation/${targetUserId}`)
+      setChats((prev) => prev.filter((chat) => chat.id !== targetUserId))
+    } catch (error) {
+      console.error('删除会话失败:', error)
+      window.alert('删除会话失败，请稍后重试')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-neutral-900 pb-20">
@@ -73,7 +92,11 @@ export default function ChatPage() {
 
       {/* 聊天列表 */}
       <div className="px-4">
-        {filteredChats.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-16 text-neutral-500 dark:text-neutral-400">
+            加载中...
+          </div>
+        ) : filteredChats.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-neutral-400 mb-2">
               <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -95,6 +118,8 @@ export default function ChatPage() {
                 message={chat.message}
                 time={chat.time}
                 unreadCount={chat.unreadCount}
+                onDelete={handleDeleteConversation}
+                isOnline={chat.isOnline}
               />
             ))}
           </div>

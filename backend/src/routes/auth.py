@@ -253,3 +253,12 @@ async def get_profile(user_id: str = Depends(get_current_user)):
             "created_at": user["created_at"]
         }
     )
+
+
+@router.post("/logout", response_model=SuccessResponse)
+async def logout_user(user_id: str = Depends(get_current_user)):
+    """用户登出，清理在线状态。"""
+    redis = get_redis()
+    await redis.zrem("online_users:last_seen", user_id)
+    await redis.srem("online_users", user_id)
+    return SuccessResponse(message="已退出登录")

@@ -199,12 +199,6 @@ async def get_discover_user(
             detail="用户不存在"
         )
 
-    if not target_user.get("allow_discovery", True):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不可被发现"
-        )
-
     is_blocked = await db["blocks"].find_one({
         "$or": [
             {"user_id": user_id, "blocked_user_id": target_user_id},

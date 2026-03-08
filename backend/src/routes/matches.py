@@ -16,6 +16,16 @@ import time
 router = APIRouter()
 
 
+async def reset_chat_state_on_rematch(db, user_a_id: str, user_b_id: str):
+    """再次匹配成功后，重置双方会话到首次匹配状态。"""
+    await db["chats"].delete_many({
+        "$or": [
+            {"from_user_id": user_a_id, "to_user_id": user_b_id},
+            {"from_user_id": user_b_id, "to_user_id": user_a_id}
+        ]
+    })
+
+
 def effective_green_mode(user: dict) -> bool:
     return user.get("green_mode", False) or user.get("charm_value", 0) < 20
 
@@ -38,12 +48,10 @@ def match_zone(user: dict) -> str:
 def is_match_preference_compatible(source_user: dict, target_user: dict) -> bool:
     target_age = target_user.get("age")
     source_age = source_user.get("age")
-    if target_age is None or source_age is None:
-        return False
 
     source_min = source_user.get("match_age_min", 18)
     source_max = source_user.get("match_age_max", 99)
-    if target_age < source_min or target_age > source_max:
+    if target_age is not None and (target_age < source_min or target_age > source_max):
         return False
 
     source_gender_pref = source_user.get("match_gender_preference", "any")
@@ -53,7 +61,7 @@ def is_match_preference_compatible(source_user: dict, target_user: dict) -> bool
 
     target_min = target_user.get("match_age_min", 18)
     target_max = target_user.get("match_age_max", 99)
-    if source_age < target_min or source_age > target_max:
+    if source_age is not None and (source_age < target_min or source_age > target_max):
         return False
 
     target_gender_pref = target_user.get("match_gender_preference", "any")
@@ -185,6 +193,8 @@ async def random_match(
             break
 
     if matched_user:
+        await reset_chat_state_on_rematch(db, user_id, matched_user["user_id"])
+
         match_id = str(uuid.uuid4())
         match_record = {
             "id": match_id,
@@ -336,6 +346,8 @@ async def pick_online(
         selected_user = random.choice(high_charm_users) if high_charm_users else random.choice(valid_users)
     else:
         selected_user = random.choice(valid_users)
+
+    await reset_chat_state_on_rematch(db, user_id, selected_user["id"])
 
     await redis.incr(today_key)
     await redis.expire(today_key, 86400)

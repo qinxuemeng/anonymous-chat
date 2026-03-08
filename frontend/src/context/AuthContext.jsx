@@ -174,9 +174,18 @@ export function AuthProvider({ children }) {
   }
 
   // 登出函数
-  const logout = () => {
-    localStorage.removeItem('token')
-    dispatch({ type: LOGOUT })
+  const logout = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (token) {
+        await api.post('/auth/logout')
+      }
+    } catch (error) {
+      // 登出接口失败也要继续清理本地状态
+    } finally {
+      localStorage.removeItem('token')
+      dispatch({ type: LOGOUT })
+    }
   }
 
   // 注销账号
