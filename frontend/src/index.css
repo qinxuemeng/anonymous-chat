@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-neutral-100 text-neutral-900 font-sans;
+  }
+
+  .dark body {
+    @apply bg-neutral-900 text-neutral-100;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-white text-primary-500 border border-primary-500 rounded-lg hover:bg-primary-50 transition-colors;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-card p-4 transition-shadow hover:shadow-card-hover;
+  }
+
+  .dark .card {
+    @apply bg-neutral-800 shadow-none;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  .dark .input-field {
+    @apply bg-neutral-700 border-neutral-600 text-neutral-100;
+  }
+
+  .tag {
+    @apply px-2 py-1 bg-primary-100 text-primary-700 text-sm rounded-full;
+  }
+
+  .dark .tag {
+    @apply bg-primary-900 text-primary-300;
+  }
+
+  .badge {
+    @apply px-2 py-1 text-xs font-medium rounded-full;
+  }
+
+  .badge-green {
+    @apply bg-green-100 text-green-700;
+  }
+
+  .badge-red {
+    @apply bg-red-100 text-red-700;
+  }
+
+  .badge-blue {
+    @apply bg-blue-100 text-blue-700;
+  }
+
+  .badge-yellow {
+    @apply bg-yellow-100 text-yellow-700;
+  }
+
+  .dark .badge-green {
+    @apply bg-green-900 text-green-300;
+  }
+
+  .dark .badge-red {
+    @apply bg-red-900 text-red-300;
+  }
+
+  .dark .badge-blue {
+    @apply bg-blue-900 text-blue-300;
+  }
+
+  .dark .badge-yellow {
+    @apply bg-yellow-900 text-yellow-300;
+  }
+
+  .nav-button {
+    @apply flex items-center justify-center p-2 rounded-lg transition-colors;
+  }
+
+  .nav-button.active {
+    @apply bg-primary-500 text-white;
+  }
+
+  .nav-button.inactive {
+    @apply bg-white text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600;
+  }
+
+  .dark .nav-button.inactive {
+    @apply bg-neutral-800 text-neutral-500 hover:bg-neutral-700 hover:text-neutral-300;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.3s ease-in;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .chat-message {
+    animation: messageSlideIn 0.3s ease-out;
+  }
+
+  @keyframes messageSlideIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .backdrop-blur {
+    backdrop-filter: blur(8px);
+  }
+
+  .user-select-none {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+}
