@@ -2,11 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from src.database import get_mongodb, get_redis
 from src.schemas import (
     MatchRequest,
-    MatchResponse,
-    MatchType,
-    MatchStatus,
     SuccessResponse,
-    ErrorResponse
 )
 from src.security import get_current_user, ONLINE_WINDOW_SECONDS
 from src.utils import check_feature_permission, get_feature_limit, get_today_key
@@ -18,6 +14,63 @@ import time
 
 
 router = APIRouter()
+
+
+def effective_green_mode(user: dict) -> bool:
+    return user.get("green_mode", False) or user.get("charm_value", 0) < 20
+
+
+def extract_province(location: str | None) -> str:
+    if not location:
+        return ""
+    text = location.strip()
+    for sep in ["省", "市", "-", " ", ",", "，", "/"]:
+        if sep in text:
+            return text.split(sep)[0].strip()
+    return text
+
+
+def match_zone(user: dict) -> str:
+    zone = user.get("match_zone", "chat")
+    return zone if zone in {"chat", "green"} else "chat"
+
+
+def is_match_preference_compatible(source_user: dict, target_user: dict) -> bool:
+    target_age = target_user.get("age")
+    source_age = source_user.get("age")
+    if target_age is None or source_age is None:
+        return False
+
+    source_min = source_user.get("match_age_min", 18)
+    source_max = source_user.get("match_age_max", 99)
+    if target_age < source_min or target_age > source_max:
+        return False
+
+    source_gender_pref = source_user.get("match_gender_preference", "any")
+    target_gender = target_user.get("gender", "secret")
+    if source_gender_pref != "any" and target_gender != source_gender_pref:
+        return False
+
+    target_min = target_user.get("match_age_min", 18)
+    target_max = target_user.get("match_age_max", 99)
+    if source_age < target_min or source_age > target_max:
+        return False
+
+    target_gender_pref = target_user.get("match_gender_preference", "any")
+    source_gender = source_user.get("gender", "secret")
+    if target_gender_pref != "any" and source_gender != target_gender_pref:
+        return False
+
+    source_loc_pref = source_user.get("match_location_preference", "any")
+    target_loc_pref = target_user.get("match_location_preference", "any")
+    source_province = extract_province(source_user.get("location"))
+    target_province = extract_province(target_user.get("location"))
+    if source_loc_pref == "same_province" and source_province and target_province and source_province != target_province:
+        return False
+    if target_loc_pref == "same_province" and source_province and target_province and source_province != target_province:
+        return False
+
+    return True
 
 
 @router.post("/random", response_model=SuccessResponse)
@@ -36,7 +89,6 @@ async def random_match(
             detail="用户不存在"
         )
 
-    # 检查权限
     charm_value = user["charm_value"]
     if not check_feature_permission(charm_value, "match"):
         raise HTTPException(
@@ -44,7 +96,6 @@ async def random_match(
             detail="您的魅力值不足，无法使用随机匹配功能"
         )
 
-    # 检查每日使用次数
     today_key = get_today_key(user_id, "match")
     usage = await redis.get(today_key)
     usage_count = int(usage) if usage else 0
@@ -56,13 +107,14 @@ async def random_match(
             detail=f"今日随机匹配次数已达上限 ({limit}次)"
         )
 
-    # 幂等处理：如果用户已经在等待中，直接返回现有匹配任务
+    queue_key = f"match_queue:random:{match_zone(user)}"
+
     existing_waiting = await db["matches"].find_one(
-        {"user_id": user_id, "status": "waiting"},
+        {"user_id": user_id, "status": "waiting", "queue": queue_key},
         sort=[("start_time", -1)]
     )
     if existing_waiting:
-        waiting_users = await redis.lrange("match_queue:random", 0, -1)
+        waiting_users = await redis.lrange(queue_key, 0, -1)
         in_queue = False
         for waiting_user_str in waiting_users:
             waiting_user = json.loads(waiting_user_str)
@@ -73,7 +125,6 @@ async def random_match(
                 in_queue = True
                 break
 
-        # 修复数据库和队列状态漂移：记录仍在 waiting 但队列丢失时补回队列
         if not in_queue:
             waiting_info = {
                 "user_id": user_id,
@@ -81,7 +132,7 @@ async def random_match(
                 "charm_value": charm_value,
                 "joined_at": datetime.now().isoformat()
             }
-            await redis.rpush("match_queue:random", json.dumps(waiting_info))
+            await redis.rpush(queue_key, json.dumps(waiting_info))
 
         return SuccessResponse(
             message="您已在匹配队列中，正在为您寻找匹配...",
@@ -93,56 +144,60 @@ async def random_match(
             }
         )
 
-    # 查找正在等待匹配的用户
-    waiting_users = await redis.lrange("match_queue:random", 0, -1)
+    waiting_users = await redis.lrange(queue_key, 0, -1)
 
     matched_user = None
-    match_id = None
-
     for waiting_user_str in waiting_users:
         waiting_user = json.loads(waiting_user_str)
-        if waiting_user["user_id"] != user_id:
-            # 清理失效记录，避免脏队列阻塞匹配
-            waiting_match = await db["matches"].find_one(
-                {
-                    "id": waiting_user.get("match_id"),
-                    "user_id": waiting_user["user_id"],
-                    "status": "waiting"
-                }
-            )
-            if not waiting_match:
-                await redis.lrem("match_queue:random", 0, waiting_user_str)
-                continue
+        if waiting_user["user_id"] == user_id:
+            continue
 
-            # 检查是否被拉黑
-            is_blocked = await db["blocks"].find_one({
-                "$or": [
-                    {"user_id": user_id, "blocked_user_id": waiting_user["user_id"]},
-                    {"user_id": waiting_user["user_id"], "blocked_user_id": user_id}
-                ]
-            })
+        waiting_match = await db["matches"].find_one(
+            {
+                "id": waiting_user.get("match_id"),
+                "user_id": waiting_user["user_id"],
+                "status": "waiting",
+                "queue": queue_key
+            }
+        )
+        if not waiting_match:
+            await redis.lrem(queue_key, 0, waiting_user_str)
+            continue
 
-            if not is_blocked:
-                matched_user = waiting_user
-                # 从队列中移除
-                await redis.lrem("match_queue:random", 0, waiting_user_str)
-                break
+        waiting_target_user = await db["users"].find_one({"id": waiting_user["user_id"]})
+        if not waiting_target_user:
+            await redis.lrem(queue_key, 0, waiting_user_str)
+            continue
+
+        if not is_match_preference_compatible(user, waiting_target_user):
+            continue
+
+        is_blocked = await db["blocks"].find_one({
+            "$or": [
+                {"user_id": user_id, "blocked_user_id": waiting_user["user_id"]},
+                {"user_id": waiting_user["user_id"], "blocked_user_id": user_id}
+            ]
+        })
+
+        if not is_blocked:
+            matched_user = waiting_user
+            await redis.lrem(queue_key, 0, waiting_user_str)
+            break
 
     if matched_user:
-        # 找到匹配，创建匹配记录
         match_id = str(uuid.uuid4())
         match_record = {
             "id": match_id,
             "user_id": user_id,
             "matched_user_id": matched_user["user_id"],
             "type": "random",
+            "queue": queue_key,
             "status": "matched",
             "start_time": datetime.now(),
             "end_time": None
         }
         await db["matches"].insert_one(match_record)
 
-        # 更新对方的匹配记录
         await db["matches"].update_one(
             {"id": matched_user["match_id"]},
             {"$set": {
@@ -151,7 +206,6 @@ async def random_match(
             }}
         )
 
-        # 增加今日使用次数
         await redis.incr(today_key)
         await redis.expire(today_key, 86400)
 
@@ -164,43 +218,40 @@ async def random_match(
                 "waiting_time": 0
             }
         )
-    else:
-        # 没有找到匹配，加入等待队列
-        match_id = str(uuid.uuid4())
-        waiting_info = {
-            "user_id": user_id,
+
+    match_id = str(uuid.uuid4())
+    waiting_info = {
+        "user_id": user_id,
+        "match_id": match_id,
+        "charm_value": charm_value,
+        "joined_at": datetime.now().isoformat()
+    }
+    await redis.rpush(queue_key, json.dumps(waiting_info))
+
+    match_record = {
+        "id": match_id,
+        "user_id": user_id,
+        "matched_user_id": None,
+        "type": "random",
+        "queue": queue_key,
+        "status": "waiting",
+        "start_time": datetime.now(),
+        "end_time": None
+    }
+    await db["matches"].insert_one(match_record)
+
+    await redis.incr(today_key)
+    await redis.expire(today_key, 86400)
+
+    return SuccessResponse(
+        message="已加入匹配队列，正在为您寻找匹配...",
+        data={
             "match_id": match_id,
-            "charm_value": charm_value,
-            "joined_at": datetime.now().isoformat()
-        }
-
-        await redis.rpush("match_queue:random", json.dumps(waiting_info))
-
-        # 创建匹配记录
-        match_record = {
-            "id": match_id,
-            "user_id": user_id,
             "matched_user_id": None,
-            "type": "random",
             "status": "waiting",
-            "start_time": datetime.now(),
-            "end_time": None
+            "waiting_time": 0
         }
-        await db["matches"].insert_one(match_record)
-
-        # 增加今日使用次数
-        await redis.incr(today_key)
-        await redis.expire(today_key, 86400)
-
-        return SuccessResponse(
-            message="已加入匹配队列，正在为您寻找匹配...",
-            data={
-                "match_id": match_id,
-                "matched_user_id": None,
-                "status": "waiting",
-                "waiting_time": 0
-            }
-        )
+    )
 
 
 @router.post("/online", response_model=SuccessResponse)
@@ -219,7 +270,6 @@ async def pick_online(
             detail="用户不存在"
         )
 
-    # 检查权限
     charm_value = user["charm_value"]
     if not check_feature_permission(charm_value, "match"):
         raise HTTPException(
@@ -227,7 +277,6 @@ async def pick_online(
             detail="您的魅力值不足，无法使用捞个在线功能"
         )
 
-    # 检查每日使用次数
     today_key = get_today_key(user_id, "pick_online")
     usage = await redis.get(today_key)
     usage_count = int(usage) if usage else 0
@@ -239,11 +288,9 @@ async def pick_online(
             detail=f"今日捞个在线次数已达上限 ({limit}次)"
         )
 
-    # 获取最近活跃用户列表（在线窗口内）
     now_ts = int(time.time())
     min_ts = now_ts - ONLINE_WINDOW_SECONDS
 
-    # 清理过期在线用户，避免集合无限增长
     await redis.zremrangebyscore("online_users:last_seen", 0, min_ts - 1)
     online_users = await redis.zrangebyscore("online_users:last_seen", min_ts, now_ts)
     online_users = list(online_users)
@@ -254,17 +301,20 @@ async def pick_online(
             detail="暂无在线用户"
         )
 
-    # 筛选允许被发现的用户
+    current_zone = match_zone(user)
     valid_users = []
     for uid in online_users:
         uid_str = uid.decode() if isinstance(uid, bytes) else uid
         if uid_str == user_id:
             continue
 
-        # 检查是否允许被发现
         target_user = await db["users"].find_one({"id": uid_str})
         if target_user and target_user.get("allow_discovery", True):
-            # 检查是否被拉黑
+            if match_zone(target_user) != current_zone:
+                continue
+            if not is_match_preference_compatible(user, target_user):
+                continue
+
             is_blocked = await db["blocks"].find_one({
                 "$or": [
                     {"user_id": user_id, "blocked_user_id": uid_str},
@@ -281,14 +331,12 @@ async def pick_online(
             detail="暂无符合条件的在线用户"
         )
 
-    # 女性用户“捞个在线”优先匹配魅力值>=100的用户
     if user.get("gender") == "female":
         high_charm_users = [u for u in valid_users if u["charm_value"] >= 100]
         selected_user = random.choice(high_charm_users) if high_charm_users else random.choice(valid_users)
     else:
         selected_user = random.choice(valid_users)
 
-    # 增加今日使用次数
     await redis.incr(today_key)
     await redis.expire(today_key, 86400)
 
@@ -312,15 +360,14 @@ async def cancel_match(
     db = get_mongodb()
     redis = get_redis()
 
-    # 从队列中移除
-    waiting_users = await redis.lrange("match_queue:random", 0, -1)
-    for waiting_user_str in waiting_users:
-        waiting_user = json.loads(waiting_user_str)
-        if waiting_user["match_id"] == match_id and waiting_user["user_id"] == user_id:
-            await redis.lrem("match_queue:random", 0, waiting_user_str)
-            break
+    for queue_key in ["match_queue:random:green", "match_queue:random:chat", "match_queue:random:normal"]:
+        waiting_users = await redis.lrange(queue_key, 0, -1)
+        for waiting_user_str in waiting_users:
+            waiting_user = json.loads(waiting_user_str)
+            if waiting_user["match_id"] == match_id and waiting_user["user_id"] == user_id:
+                await redis.lrem(queue_key, 0, waiting_user_str)
+                break
 
-    # 更新匹配记录状态
     await db["matches"].update_one(
         {"id": match_id, "user_id": user_id, "status": "waiting"},
         {"$set": {"status": "completed", "end_time": datetime.now()}}

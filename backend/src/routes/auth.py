@@ -81,6 +81,11 @@ async def register_user(user_data: UserRegister = Body(...)):
         "keep_logged_in": False,
         "english_mode": False,
         "show_location": False,
+        "match_gender_preference": "any",
+        "match_location_preference": "any",
+        "match_age_min": 18,
+        "match_age_max": 70,
+        "match_zone": "chat",
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
         "last_login_at": datetime.now(),
@@ -112,6 +117,11 @@ async def register_user(user_data: UserRegister = Body(...)):
                 "keep_logged_in": user["keep_logged_in"],
                 "english_mode": user["english_mode"],
                 "show_location": user["show_location"],
+                "match_gender_preference": user.get("match_gender_preference", "any"),
+                "match_location_preference": user.get("match_location_preference", "any"),
+                "match_age_min": user.get("match_age_min", 18),
+                "match_age_max": user.get("match_age_max", 70),
+                "match_zone": user.get("match_zone", "chat"),
                 "created_at": user["created_at"]
             }
         }
@@ -194,6 +204,11 @@ async def login_user(login_data: UserLogin = Body(...)):
                 "keep_logged_in": user["keep_logged_in"],
                 "english_mode": user["english_mode"],
                 "show_location": user["show_location"],
+                "match_gender_preference": user.get("match_gender_preference", "any"),
+                "match_location_preference": user.get("match_location_preference", "any"),
+                "match_age_min": user.get("match_age_min", 18),
+                "match_age_max": user.get("match_age_max", 70),
+                "match_zone": user.get("match_zone", "chat"),
                 "created_at": user["created_at"]
             }
         }
@@ -229,6 +244,11 @@ async def get_profile(user_id: str = Depends(get_current_user)):
             "keep_logged_in": user["keep_logged_in"],
             "english_mode": user["english_mode"],
             "show_location": user["show_location"],
+            "match_gender_preference": user.get("match_gender_preference", "any"),
+            "match_location_preference": user.get("match_location_preference", "any"),
+            "match_age_min": user.get("match_age_min", 18),
+            "match_age_max": user.get("match_age_max", 70),
+            "match_zone": user.get("match_zone", "chat"),
             "tags": user.get("tags", []),
             "created_at": user["created_at"]
         }

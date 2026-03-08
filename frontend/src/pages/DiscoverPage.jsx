@@ -5,9 +5,11 @@ import AnnouncementCarousel from '../components/AnnouncementCarousel'
 import MatchCard from '../components/MatchCard'
 import { Users, Settings, X, Loader2, Clock, User, MessageCircle } from 'lucide-react'
 import { api } from '../services/api'
+import { useAuth } from '../context/AuthContext'
 
 export default function DiscoverPage() {
   const navigate = useNavigate()
+  const { user, updateSettings } = useAuth()
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -18,6 +20,15 @@ export default function DiscoverPage() {
   const [isLoadingAction, setIsLoadingAction] = useState(false)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('info')
+  const [showStrangerModal, setShowStrangerModal] = useState(false)
+  const [showZoneModal, setShowZoneModal] = useState(false)
+  const [strangerSettings, setStrangerSettings] = useState({
+    gender: 'any',
+    location: 'any',
+    ageMin: 18,
+    ageMax: 70
+  })
+  const [zoneSetting, setZoneSetting] = useState('chat')
 
   // 匹配相关状态
   const [isMatching, setIsMatching] = useState(false)
@@ -47,6 +58,17 @@ export default function DiscoverPage() {
     fetchAnnouncements()
   }, [])
 
+  useEffect(() => {
+    if (!user) return
+    setStrangerSettings({
+      gender: user.match_gender_preference || 'any',
+      location: user.match_location_preference || 'any',
+      ageMin: Number(user.match_age_min ?? 18),
+      ageMax: Number(user.match_age_max ?? 70)
+    })
+    setZoneSetting(user.match_zone || 'chat')
+  }, [user])
+
   // 清理定时器
   useEffect(() => {
     return () => {
@@ -63,6 +85,69 @@ export default function DiscoverPage() {
     setMessage(msg)
     setMessageType(type)
     setTimeout(() => setMessage(''), 3000)
+  }
+
+  const adjustAge = (field, delta) => {
+    setStrangerSettings((prev) => {
+      let next = { ...prev, [field]: Number(prev[field]) + delta }
+      if (field === 'ageMin') {
+        if (next.ageMin < 18) next.ageMin = 18
+        if (next.ageMin > next.ageMax) next.ageMin = next.ageMax
+      } else {
+        if (next.ageMax > 70) next.ageMax = 70
+        if (next.ageMax < next.ageMin) next.ageMax = next.ageMin
+      }
+      return next
+    })
+  }
+
+  const resetStrangerSettings = () => {
+    setStrangerSettings({
+      gender: 'any',
+      location: 'any',
+      ageMin: 18,
+      ageMax: 70
+    })
+  }
+
+  const saveStrangerSettings = async () => {
+    try {
+      setIsLoadingAction(true)
+      const result = await updateSettings({
+        match_gender_preference: strangerSettings.gender,
+        match_location_preference: strangerSettings.location,
+        match_age_min: Number(strangerSettings.ageMin),
+        match_age_max: Number(strangerSettings.ageMax)
+      })
+      if (!result.success) {
+        showMessage(result.error || '保存失败', 'error')
+        return
+      }
+      showMessage('陌生人设置已保存', 'success')
+      setShowStrangerModal(false)
+    } finally {
+      setIsLoadingAction(false)
+    }
+  }
+
+  const saveZoneSetting = async () => {
+    const forceGreen = (user?.charm_value || 0) < 20 || user?.green_mode
+    if (zoneSetting === 'green' && !forceGreen) {
+      showMessage('清流分区仅支持开启绿色模式的用户', 'error')
+      return
+    }
+    try {
+      setIsLoadingAction(true)
+      const result = await updateSettings({ match_zone: zoneSetting })
+      if (!result.success) {
+        showMessage(result.error || '保存失败', 'error')
+        return
+      }
+      showMessage('分区设置已保存', 'success')
+      setShowZoneModal(false)
+    } finally {
+      setIsLoadingAction(false)
+    }
   }
 
   // 开始匹配
@@ -455,15 +540,18 @@ export default function DiscoverPage() {
             </h1>
             <div className="flex gap-2">
               <button
-                onClick={() => navigate('/settings')}
+                onClick={() => setShowStrangerModal(true)}
                 className="px-3 py-1 bg-white dark:bg-neutral-800 border border-blue-500 text-blue-500 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors flex items-center gap-2 text-sm"
               >
                 <Settings className="w-4 h-4" />
                 陌生人设置
               </button>
-              <button className="px-3 py-1 bg-white dark:bg-neutral-800 border border-green-500 text-green-500 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors flex items-center gap-2 text-sm">
+              <button
+                onClick={() => setShowZoneModal(true)}
+                className="px-3 py-1 bg-white dark:bg-neutral-800 border border-green-500 text-green-500 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors flex items-center gap-2 text-sm"
+              >
                 <Users className="w-4 h-4" />
-                畅聊分区
+                {zoneSetting === 'green' ? '清流分区' : '畅聊分区'}
               </button>
             </div>
           </div>
@@ -655,6 +743,110 @@ export default function DiscoverPage() {
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {showStrangerModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6">
+            <h3 className="text-3xl font-bold text-center text-neutral-800 mb-4">陌生人设置</h3>
+            <p className="text-sm text-neutral-500 mb-5 text-center">
+              设置随机匹配筛选条件（捞个在线/随机匹配生效）
+            </p>
+
+            <div className="space-y-5">
+              <div className="flex items-center gap-3">
+                <span className="text-lg font-medium text-neutral-700 w-14">性别</span>
+                {[
+                  ['male', '男'],
+                  ['female', '女'],
+                  ['any', '任意']
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setStrangerSettings((prev) => ({ ...prev, gender: value }))}
+                    className={`px-3 py-2 rounded-full border ${strangerSettings.gender === value ? 'bg-blue-500 text-white border-blue-500' : 'border-neutral-300 text-neutral-600'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-lg font-medium text-neutral-700 w-14">位置</span>
+                {[
+                  ['same_province', '同省'],
+                  ['any', '任意']
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setStrangerSettings((prev) => ({ ...prev, location: value }))}
+                    className={`px-3 py-2 rounded-full border ${strangerSettings.location === value ? 'bg-blue-500 text-white border-blue-500' : 'border-neutral-300 text-neutral-600'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-medium text-neutral-700 w-14">年龄</span>
+                <button onClick={() => adjustAge('ageMin', -1)} className="w-10 h-10 rounded bg-neutral-100 text-2xl text-neutral-500">-</button>
+                <div className="w-14 h-10 rounded bg-neutral-100 flex items-center justify-center text-xl">{strangerSettings.ageMin}</div>
+                <button onClick={() => adjustAge('ageMin', 1)} className="w-10 h-10 rounded bg-neutral-100 text-2xl text-blue-500">+</button>
+                <span className="text-xl text-neutral-500 px-1">到</span>
+                <button onClick={() => adjustAge('ageMax', -1)} className="w-10 h-10 rounded bg-neutral-100 text-2xl text-blue-500">-</button>
+                <div className="w-14 h-10 rounded bg-neutral-100 flex items-center justify-center text-xl">{strangerSettings.ageMax}</div>
+                <button onClick={() => adjustAge('ageMax', 1)} className="w-10 h-10 rounded bg-neutral-100 text-2xl text-neutral-400">+</button>
+              </div>
+            </div>
+
+            <div className="mt-8 grid grid-cols-2 gap-3">
+              <button
+                onClick={resetStrangerSettings}
+                className="py-3 rounded-xl border border-neutral-300 text-neutral-600"
+              >
+                重置
+              </button>
+              <button
+                onClick={saveStrangerSettings}
+                className="py-3 rounded-xl bg-blue-500 text-white"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showZoneModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl p-6">
+            <h3 className="text-2xl font-bold text-neutral-800 mb-4 text-center">选择分区</h3>
+            <p className="text-sm text-neutral-500 mb-4 text-center">仅匹配同分区用户</p>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => setZoneSetting('chat')}
+                className={`w-full p-4 rounded-xl border text-left ${zoneSetting === 'chat' ? 'bg-blue-500 text-white border-blue-500' : 'border-neutral-300 text-neutral-700'}`}
+              >
+                畅聊（默认）<span className="block text-xs opacity-90">开/关绿色模式用户都可匹配</span>
+              </button>
+              <button
+                onClick={() => setZoneSetting('green')}
+                disabled={!((user?.charm_value || 0) < 20 || user?.green_mode)}
+                className={`w-full p-4 rounded-xl border text-left ${
+                  zoneSetting === 'green' ? 'bg-emerald-500 text-white border-emerald-500' : 'border-neutral-300 text-neutral-700'
+                } ${!((user?.charm_value || 0) < 20 || user?.green_mode) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                清流<span className="block text-xs opacity-90">仅绿色模式用户可选可匹配</span>
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button onClick={() => setShowZoneModal(false)} className="py-3 rounded-xl border border-neutral-300 text-neutral-600">取消</button>
+              <button onClick={saveZoneSetting} className="py-3 rounded-xl bg-blue-500 text-white">确定</button>
+            </div>
           </div>
         </div>
       )}

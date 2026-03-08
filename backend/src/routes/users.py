@@ -9,9 +9,10 @@ from src.schemas import (
     ErrorResponse
 )
 from src.security import get_current_user
-from src.utils import validate_image, save_uploaded_file, check_feature_permission
+from src.utils import validate_image, save_uploaded_file
 from datetime import datetime
 import os
+import json
 
 
 router = APIRouter()
@@ -77,17 +78,48 @@ async def update_settings(
 
     update_data = settings.dict(exclude_unset=True)
     charm_value = user.get("charm_value", 0)
+    allowed_gender_preferences = {"any", "male", "female"}
+    allowed_location_preferences = {"any", "same_province"}
+    allowed_zones = {"chat", "green"}
 
-    # 魅力值<200 不能修改陌生人设置（allow_discovery）
-    if "allow_discovery" in update_data and not check_feature_permission(charm_value, "edit_settings"):
+    if "match_gender_preference" in update_data and update_data["match_gender_preference"] not in allowed_gender_preferences:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="魅力值需大于200才可修改陌生人设置"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="匹配性别设置无效"
         )
+
+    if "match_location_preference" in update_data and update_data["match_location_preference"] not in allowed_location_preferences:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="匹配位置设置无效"
+        )
+
+    if "match_zone" in update_data and update_data["match_zone"] not in allowed_zones:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="分区设置无效"
+        )
+
+    min_age = update_data.get("match_age_min", user.get("match_age_min", 18))
+    max_age = update_data.get("match_age_max", user.get("match_age_max", 70))
+    if min_age is not None and max_age is not None:
+        if min_age < 18 or max_age > 70 or min_age > max_age:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="年龄区间设置无效"
+            )
 
     # 魅力值<20 强制绿色模式
     if charm_value < 20:
         update_data["green_mode"] = True
+
+    effective_green = update_data.get("green_mode", user.get("green_mode", False)) or charm_value < 20
+    target_zone = update_data.get("match_zone", user.get("match_zone", "chat"))
+    if target_zone == "green" and not effective_green:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="清流分区仅支持绿色模式用户"
+        )
 
     if not update_data:
         return SuccessResponse(message="无可更新设置")
@@ -102,6 +134,48 @@ async def update_settings(
     return SuccessResponse(
         message="设置更新成功"
     )
+
+
+@router.delete("/account", response_model=SuccessResponse)
+async def delete_account(
+    user_id: str = Depends(get_current_user)
+):
+    """注销账号"""
+    db = get_mongodb()
+    redis = get_redis()
+
+    user = await db["users"].find_one({"id": user_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    await db["users"].delete_one({"id": user_id})
+    await db["chats"].delete_many({"$or": [{"from_user_id": user_id}, {"to_user_id": user_id}]})
+    await db["matches"].delete_many({"$or": [{"user_id": user_id}, {"matched_user_id": user_id}]})
+    await db["bottles"].delete_many({"user_id": user_id})
+    await db["bottle_picks"].delete_many({"picker_user_id": user_id})
+    await db["bottle_replies"].delete_many({"$or": [{"from_user_id": user_id}, {"to_user_id": user_id}]})
+    await db["announcements"].delete_many({"user_id": user_id})
+    await db["announcement_claims"].delete_many({"claimant_user_id": user_id})
+    await db["blocks"].delete_many({"$or": [{"user_id": user_id}, {"blocked_user_id": user_id}]})
+    await db["reports"].delete_many({"$or": [{"user_id": user_id}, {"target_user_id": user_id}]})
+    await db["charm_history"].delete_many({"user_id": user_id})
+
+    await redis.zrem("online_users:last_seen", user_id)
+    await redis.srem("online_users", user_id)
+    for queue_key in ["match_queue:random", "match_queue:random:green", "match_queue:random:chat", "match_queue:random:normal"]:
+        waiting_users = await redis.lrange(queue_key, 0, -1)
+        for waiting_user_str in waiting_users:
+            waiting_user = json.loads(waiting_user_str)
+            if waiting_user.get("user_id") == user_id:
+                await redis.lrem(queue_key, 0, waiting_user_str)
+
+    async for key in redis.scan_iter(match=f"usage:{user_id}:*"):
+        await redis.delete(key)
+
+    return SuccessResponse(message="账号已注销")
 
 
 @router.get("/discover/{target_user_id}", response_model=SuccessResponse)

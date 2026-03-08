@@ -59,6 +59,11 @@ class UserResponse(BaseModel):
     keep_logged_in: bool = False
     english_mode: bool = False
     show_location: bool = False
+    match_gender_preference: str = "any"
+    match_location_preference: str = "any"
+    match_age_min: int = 18
+    match_age_max: int = 99
+    match_zone: str = "chat"
     tags: List[str] = []
     created_at: datetime
 
@@ -82,6 +87,11 @@ class UserSettingsUpdate(BaseModel):
     keep_logged_in: Optional[bool] = None
     english_mode: Optional[bool] = None
     show_location: Optional[bool] = None
+    match_gender_preference: Optional[str] = None
+    match_location_preference: Optional[str] = None
+    match_age_min: Optional[int] = None
+    match_age_max: Optional[int] = None
+    match_zone: Optional[str] = None
 
 
 # ============== 认证相关 ==============

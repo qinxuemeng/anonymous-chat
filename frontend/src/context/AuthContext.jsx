@@ -179,6 +179,23 @@ export function AuthProvider({ children }) {
     dispatch({ type: LOGOUT })
   }
 
+  // 注销账号
+  const deleteAccount = async () => {
+    try {
+      const response = await api.delete('/users/account')
+      if (response.data.success) {
+        logout()
+        return { success: true }
+      }
+      return { success: false, error: response.data.error || '注销失败' }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || '网络错误'
+      }
+    }
+  }
+
   // 更新用户信息
   const updateProfile = async (userData) => {
     try {
@@ -269,6 +286,7 @@ export function AuthProvider({ children }) {
         login,
         register,
         logout,
+        deleteAccount,
         updateProfile,
         updateSettings,
         uploadAvatar,
