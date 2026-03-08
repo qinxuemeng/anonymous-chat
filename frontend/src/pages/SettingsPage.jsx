@@ -2,13 +2,18 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import BottomNav from '../components/BottomNav'
 import { useAuth } from '../context/AuthContext'
-import { Moon, Bell, Shield, Lock, Eye, Globe, User, ChevronRight, LogOut, X } from 'lucide-react'
+import { Moon, Bell, Shield, Lock, Eye, Globe, User, ChevronRight, LogOut, X, Wallet } from 'lucide-react'
+import { api } from '../services/api'
 
 export default function SettingsPage() {
-  const { user, logout, updateSettings, deleteAccount } = useAuth()
+  const { user, logout, updateSettings, deleteAccount, fetchUserProfile } = useAuth()
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState('')
   const [showCharmGuide, setShowCharmGuide] = useState(false)
+  const [showRechargeModal, setShowRechargeModal] = useState(false)
+  const [rechargeAmount, setRechargeAmount] = useState(1)
+  const [rechargeChannel, setRechargeChannel] = useState('wechat')
+  const [rechargeLoading, setRechargeLoading] = useState(false)
 
   const [settings, setSettings] = useState({
     allowDiscovery: true,
@@ -90,6 +95,29 @@ export default function SettingsPage() {
 
     const result = await deleteAccount()
     if (!result.success) setToast(result.error || '注销失败')
+  }
+
+  const handleRecharge = async () => {
+    if (rechargeLoading) return
+    try {
+      setRechargeLoading(true)
+      const resp = await api.post('/charm/recharge', {
+        amount: Number(rechargeAmount),
+        channel: rechargeChannel
+      })
+      const data = resp.data
+      if (!data?.success) {
+        setToast(data?.error || '充值失败')
+        return
+      }
+      await fetchUserProfile()
+      setToast(`充值成功，+${data.data?.charm_gain || (rechargeAmount * 100)} 魅力值`)
+      setShowRechargeModal(false)
+    } catch (e) {
+      setToast('充值失败，请稍后重试')
+    } finally {
+      setRechargeLoading(false)
+    }
   }
 
   const toggleSetting = (key) => handleSettingChange(key, !settings[key])
@@ -182,6 +210,10 @@ export default function SettingsPage() {
             <span className="text-neutral-900 dark:text-neutral-100">魅力值</span>
             <div className="flex items-center gap-2">
               <span className="text-primary-500 font-medium">{user?.charm_value || 0}</span>
+              <button className="text-sm text-emerald-600 flex items-center gap-1" onClick={() => setShowRechargeModal(true)}>
+                <Wallet className="w-4 h-4" />
+                充值
+              </button>
               <button className="text-sm text-primary-500" onClick={() => setShowCharmGuide(true)}>魅力值说明</button>
             </div>
           </div>
@@ -226,7 +258,7 @@ export default function SettingsPage() {
                 <h3 className="font-semibold mb-2 text-neutral-900 dark:text-neutral-100">魅力值作用</h3>
                 <ol className="list-decimal pl-5 space-y-1">
                   <li>小于20，强制绿色模式，每日随机匹配最多200次，捞瓶子和捞在线最多2次。</li>
-                  <li>大于35，可发文件，可修改昵称，初始值是30。</li>
+                  <li>大于35，可发文件，可修改昵称，初始值是500。</li>
                   <li>大于50，可上传自定义头像，可扔瓶子，可捞瓶子。</li>
                   <li>大于100，可发布寻人公告，女性用户“捞个在线”会优先捞大于100的用户。</li>
                   <li>大于200，可修改高级陌生人设置。</li>
@@ -257,6 +289,60 @@ export default function SettingsPage() {
                   <li>上传头像自动审核不通过，一次扣5。</li>
                 </ol>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRechargeModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-neutral-800 rounded-2xl">
+            <div className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">魅力值充值</h2>
+              <button onClick={() => setShowRechargeModal(false)} className="text-neutral-500"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-sm text-neutral-500 mb-2">充值金额（1元=100魅力值，整百购买）</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[1, 5, 10].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setRechargeAmount(amt)}
+                      className={`py-2 rounded-lg border ${rechargeAmount === amt ? 'border-primary-500 text-primary-600' : 'border-neutral-300 text-neutral-700'}`}
+                    >
+                      {amt}元 / {amt * 100}魅力
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-neutral-500 mb-2">支付方式</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRechargeChannel('wechat')}
+                    className={`py-2 rounded-lg border ${rechargeChannel === 'wechat' ? 'border-green-500 text-green-600' : 'border-neutral-300 text-neutral-700'}`}
+                  >
+                    微信支付
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRechargeChannel('alipay')}
+                    className={`py-2 rounded-lg border ${rechargeChannel === 'alipay' ? 'border-sky-500 text-sky-600' : 'border-neutral-300 text-neutral-700'}`}
+                  >
+                    支付宝
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={handleRecharge}
+                disabled={rechargeLoading}
+                className="w-full py-2.5 rounded-lg bg-primary-500 text-white disabled:opacity-60"
+              >
+                {rechargeLoading ? '处理中...' : `立即充值 ${rechargeAmount} 元（+${rechargeAmount * 100}魅力）`}
+              </button>
             </div>
           </div>
         </div>

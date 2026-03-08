@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from src.database import get_mongodb, get_redis
 from src.schemas import (
     SuccessResponse,
-    ErrorResponse
+    ErrorResponse,
+    CharmRechargeRequest
 )
 from src.security import get_current_user
 from src.utils import (
@@ -13,6 +14,7 @@ from src.utils import (
 )
 from datetime import datetime
 import random
+import uuid
 
 
 router = APIRouter()
@@ -57,6 +59,10 @@ async def get_charm_info(
         usage = await redis.get(today_key)
         usage_count = int(usage) if usage else 0
         limit = get_feature_limit(charm_value, feature)
+        if feature in {"pick_bottle", "throw_bottle"}:
+            limit = min(limit, 20)
+        if feature == "pick_online":
+            limit = min(limit, 10)
         daily_usage[feature] = {
             "used": usage_count,
             "limit": limit,
@@ -98,6 +104,20 @@ async def get_charm_history(
             "total": await db["charm_history"].count_documents({"user_id": user_id})
         }
     )
+
+
+@router.get("/ledger", response_model=SuccessResponse)
+async def get_charm_ledger(
+    page: int = 1,
+    page_size: int = 20,
+    user_id: str = Depends(get_current_user)
+):
+    """获取魅力值账本流水（支付/消费/奖励）。"""
+    db = get_mongodb()
+    skip = (page - 1) * page_size
+    rows = await db["charm_ledger"].find({"user_id": user_id}).sort("created_at", -1).skip(skip).limit(page_size).to_list(length=page_size)
+    total = await db["charm_ledger"].count_documents({"user_id": user_id})
+    return SuccessResponse(message="获取成功", data={"rows": rows, "page": page, "page_size": page_size, "total": total})
 
 
 @router.post("/daily-checkin", response_model=SuccessResponse)
@@ -232,5 +252,44 @@ async def get_privileges(
         message="获取成功",
         data={
             "privileges": privileges
+        }
+    )
+
+
+@router.post("/recharge", response_model=SuccessResponse)
+async def recharge_charm(
+    payload: CharmRechargeRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """魅力值充值（微信/支付宝）。"""
+    db = get_mongodb()
+    user = await db["users"].find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    # 简化策略：1元=100魅力值，按整元购买（对应整百魅力值）
+    charm_gain = int(payload.amount) * 100
+    await db["users"].update_one(
+        {"id": user_id},
+        {"$inc": {"charm_value": charm_gain}, "$set": {"updated_at": datetime.now()}}
+    )
+    refreshed = await db["users"].find_one({"id": user_id})
+    await db["charm_history"].insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "action": "member",
+        "change_value": charm_gain,
+        "description": f"{'微信' if payload.channel == 'wechat' else '支付宝'}充值",
+        "new_value": refreshed["charm_value"],
+        "created_at": datetime.now()
+    })
+
+    return SuccessResponse(
+        message="充值成功",
+        data={
+            "channel": payload.channel,
+            "paid_amount": payload.amount,
+            "charm_gain": charm_gain,
+            "current_charm_value": refreshed["charm_value"]
         }
     )

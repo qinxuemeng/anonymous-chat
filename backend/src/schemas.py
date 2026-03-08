@@ -51,7 +51,7 @@ class UserResponse(BaseModel):
     avatar: Optional[str] = None
     gender: Optional[Gender] = None
     age: Optional[int] = None
-    charm_value: int = 30
+    charm_value: int = 500
     allow_discovery: bool = True
     green_mode: bool = False
     night_mode: bool = False
@@ -162,6 +162,7 @@ class MatchStatus(str, Enum):
 
 class MatchRequest(BaseModel):
     type: MatchType
+    use_preferences: bool = False
 
 
 class MatchResponse(BaseModel):
@@ -177,6 +178,8 @@ class MatchResponse(BaseModel):
 class BottleCreate(BaseModel):
     content: str
     images: Optional[List[str]] = []
+    max_pick_count: int = Field(default=5, ge=1, le=20)
+    use_preferences: bool = False
 
 
 class BottleResponse(BaseModel):
@@ -185,7 +188,7 @@ class BottleResponse(BaseModel):
     content: str
     images: List[str] = []
     pick_count: int = 0
-    max_pick_count: int = 10
+    max_pick_count: int = 5
     status: str = "active"
     created_at: datetime
     expires_at: datetime
@@ -248,6 +251,17 @@ class CharmValueResponse(BaseModel):
     level: str
     permissions: Dict[str, Any]
     daily_usage: Dict[str, int]
+
+
+class CharmRechargeRequest(BaseModel):
+    amount: int = Field(..., ge=1, le=9999)
+    channel: str = Field(..., pattern="^(wechat|alipay)$")
+
+
+class PayCreateOrderRequest(BaseModel):
+    product_id: str
+    channel: str = Field(..., pattern="^(wechat|alipay)$")
+    idempotency_key: Optional[str] = None
 
 
 # ============== 通用响应 ==============

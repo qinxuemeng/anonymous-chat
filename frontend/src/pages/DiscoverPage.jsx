@@ -15,6 +15,7 @@ export default function DiscoverPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalType, setModalType] = useState(null)
   const [bottleContent, setBottleContent] = useState('')
+  const [bottleMaxPickCount, setBottleMaxPickCount] = useState(5)
   const [pickedBottle, setPickedBottle] = useState(null)
   const [onlineUser, setOnlineUser] = useState(null)
   const [isLoadingAction, setIsLoadingAction] = useState(false)
@@ -35,6 +36,8 @@ export default function DiscoverPage() {
   const [matchingTime, setMatchingTime] = useState(0)
   const [matchedUser, setMatchedUser] = useState(null)
   const [showMatchResult, setShowMatchResult] = useState(false)
+  const [showMatchModeModal, setShowMatchModeModal] = useState(false)
+  const [currentMatchMode, setCurrentMatchMode] = useState('random')
   const matchingTimerRef = useRef(null)
   const pollTimerRef = useRef(null)
   const currentMatchIdRef = useRef(null)
@@ -68,6 +71,13 @@ export default function DiscoverPage() {
     })
     setZoneSetting(user.match_zone || 'chat')
   }, [user])
+
+  useEffect(() => {
+    const saved = localStorage.getItem('match_mode')
+    if (saved === 'random' || saved === 'preferences') {
+      setCurrentMatchMode(saved)
+    }
+  }, [])
 
   // 清理定时器
   useEffect(() => {
@@ -151,7 +161,7 @@ export default function DiscoverPage() {
   }
 
   // 开始匹配
-  const startMatching = async () => {
+  const startMatching = async (usePreferences = false) => {
     try {
       if (matchingTimerRef.current) {
         clearInterval(matchingTimerRef.current)
@@ -164,8 +174,12 @@ export default function DiscoverPage() {
       setMatchedUser(null)
       setShowMatchResult(false)
       setIsLoadingAction(true)
+      setCurrentMatchMode(usePreferences ? 'preferences' : 'random')
 
-      const response = await api.post('/match/random', { type: 'random' })
+      const response = await api.post('/match/random', {
+        type: 'random',
+        use_preferences: usePreferences
+      })
       if (response.data.success) {
         const data = response.data.data
         currentMatchIdRef.current = data.match_id
@@ -291,15 +305,31 @@ export default function DiscoverPage() {
   }
 
   const handleRandomMatch = async () => {
-    await startMatching()
+    await startMatching(currentMatchMode === 'preferences')
+  }
+
+  const startRandomMode = async () => {
+    setCurrentMatchMode('random')
+    localStorage.setItem('match_mode', 'random')
+    setShowMatchModeModal(false)
+  }
+
+  const startPreferenceMode = async () => {
+    setCurrentMatchMode('preferences')
+    localStorage.setItem('match_mode', 'preferences')
+    setShowMatchModeModal(false)
   }
 
   const handlePickOnline = async () => {
     try {
       setIsLoadingAction(true)
-      const response = await api.post('/match/online', { type: 'online' })
+      const modePayload = { type: 'online', use_preferences: currentMatchMode === 'preferences' }
+      const response = await api.post('/match/online', modePayload)
       if (response.data.success) {
         const data = response.data.data
+        if (currentMatchMode === 'preferences' && data?.free_exhausted) {
+          showMessage(`免费次数已用完，当前定向模式已消耗${data?.charm_cost || 5}魅力值`, 'info')
+        }
         const detailResp = await api.get(`/users/discover/${data.user_id}`)
         const detail = detailResp.data?.data || {}
         setOnlineUser({
@@ -316,7 +346,13 @@ export default function DiscoverPage() {
         setIsModalOpen(true)
       }
     } catch (error) {
-      showMessage(error.response?.data?.error || '捞取失败，请稍后重试', 'error')
+      const statusCode = error?.response?.status
+      const errMsg = error?.response?.data?.error || ''
+      if (statusCode === 429 && currentMatchMode === 'random') {
+        showMessage(`${errMsg}，可切换为“定向模式”继续使用`, 'error')
+      } else {
+        showMessage(errMsg || '捞取失败，请稍后重试', 'error')
+      }
     } finally {
       setIsLoadingAction(false)
     }
@@ -325,6 +361,7 @@ export default function DiscoverPage() {
   const openThrowBottleModal = () => {
     setModalType('throw')
     setBottleContent('')
+    setBottleMaxPickCount(5)
     setIsModalOpen(true)
   }
 
@@ -337,14 +374,27 @@ export default function DiscoverPage() {
       setIsLoadingAction(true)
       const response = await api.post('/bottles/throw', {
         content: bottleContent,
-        images: []
+        images: [],
+        max_pick_count: bottleMaxPickCount,
+        use_preferences: currentMatchMode === 'preferences'
       })
       if (response.data.success) {
-        showMessage('瓶子已投入大海！', 'success')
+        const data = response.data.data || {}
+        if (currentMatchMode === 'preferences' && data?.free_exhausted) {
+          showMessage(`免费次数已用完，当前定向模式已消耗${data?.charm_cost || 5}魅力值`, 'info')
+        } else {
+          showMessage('瓶子已投入大海！', 'success')
+        }
         setIsModalOpen(false)
       }
     } catch (error) {
-      showMessage(error.response?.data?.error || '扔瓶子失败，请稍后重试', 'error')
+      const statusCode = error?.response?.status
+      const errMsg = error?.response?.data?.error || ''
+      if (statusCode === 429 && currentMatchMode === 'random') {
+        showMessage(`${errMsg}，可切换为“定向模式”继续使用`, 'error')
+      } else {
+        showMessage(errMsg || '扔瓶子失败，请稍后重试', 'error')
+      }
     } finally {
       setIsLoadingAction(false)
     }
@@ -353,9 +403,14 @@ export default function DiscoverPage() {
   const handlePickBottle = async () => {
     try {
       setIsLoadingAction(true)
-      const response = await api.post('/bottles/pick')
+      const response = await api.post('/bottles/pick', {
+        use_preferences: currentMatchMode === 'preferences'
+      })
       if (response.data.success) {
         const data = response.data.data
+        if (currentMatchMode === 'preferences' && data?.free_exhausted) {
+          showMessage(`免费次数已用完，当前定向模式已消耗${data?.charm_cost || 5}魅力值`, 'info')
+        }
         const genderMap = { male: '男', female: '女', secret: '保密' }
         setPickedBottle({
           bottle_id: data.bottle_id,
@@ -369,7 +424,13 @@ export default function DiscoverPage() {
         setIsModalOpen(true)
       }
     } catch (error) {
-      showMessage(error.response?.data?.error || '捞瓶子失败，请稍后重试', 'error')
+      const statusCode = error?.response?.status
+      const errMsg = error?.response?.data?.error || ''
+      if (statusCode === 429 && currentMatchMode === 'random') {
+        showMessage(`${errMsg}，可切换为“定向模式”继续使用`, 'error')
+      } else {
+        showMessage(errMsg || '捞瓶子失败，请稍后重试', 'error')
+      }
     } finally {
       setIsLoadingAction(false)
     }
@@ -439,7 +500,7 @@ export default function DiscoverPage() {
                 匹配中
               </h3>
               <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-                清空私聊，将删除所有未收藏的私聊，已收藏的私聊需要手动删除
+                {currentMatchMode === 'preferences' ? '按陌生人设置定向匹配中（每次消耗魅力值）' : '随机匹配中（不消耗魅力值）'}
               </p>
               <div className="flex items-center justify-center gap-2 text-neutral-600 dark:text-neutral-400">
                 <Clock className="w-4 h-4" />
@@ -540,25 +601,31 @@ export default function DiscoverPage() {
 
       {/* 顶部标题栏 */}
       <div className="bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
-        <div className="max-w-md mx-auto px-4 py-3">
-          <div className="flex justify-between items-center">
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-              遇见陌生人
-            </h1>
-            <div className="flex gap-2">
+        <div className="max-w-5xl mx-auto px-4 pt-4 pb-3">
+          <div className="rounded-2xl border border-neutral-200/80 dark:border-neutral-700 bg-gradient-to-br from-white to-neutral-50 dark:from-neutral-800 dark:to-neutral-800/80 p-4">
+            <h1 className="text-[34px] leading-none font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 text-center">遇见陌生人</h1>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center mt-2">快速切换筛选和匹配方式</p>
+            <div className="grid grid-cols-3 gap-2 mt-4">
               <button
                 onClick={() => setShowStrangerModal(true)}
-                className="px-3 py-1 bg-white dark:bg-neutral-800 border border-blue-500 text-blue-500 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors flex items-center gap-2 text-sm"
+                className="h-16 px-2 rounded-xl border border-blue-500/70 bg-blue-50/70 dark:bg-blue-900/15 text-blue-600 hover:bg-blue-100/80 dark:hover:bg-blue-900/25 transition-colors flex flex-col items-center justify-center gap-1 text-xs font-semibold"
               >
                 <Settings className="w-4 h-4" />
-                陌生人设置
+                <span>陌生设置</span>
               </button>
               <button
                 onClick={() => setShowZoneModal(true)}
-                className="px-3 py-1 bg-white dark:bg-neutral-800 border border-green-500 text-green-500 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors flex items-center gap-2 text-sm"
+                className="h-16 px-2 rounded-xl border border-green-500/70 bg-green-50/70 dark:bg-green-900/15 text-green-600 hover:bg-green-100/80 dark:hover:bg-green-900/25 transition-colors flex flex-col items-center justify-center gap-1 text-xs font-semibold"
               >
                 <Users className="w-4 h-4" />
-                {zoneSetting === 'green' ? '清流分区' : '畅聊分区'}
+                <span>{zoneSetting === 'green' ? '清流分区' : '畅聊分区'}</span>
+              </button>
+              <button
+                onClick={() => setShowMatchModeModal(true)}
+                className="h-16 px-2 rounded-xl border border-purple-500/70 bg-purple-50/70 dark:bg-purple-900/15 text-purple-600 hover:bg-purple-100/80 dark:hover:bg-purple-900/25 transition-colors flex flex-col items-center justify-center gap-1 text-xs font-semibold"
+              >
+                <span>匹配模式</span>
+                <span className="text-[11px] opacity-80">{currentMatchMode === 'preferences' ? '定向' : '随机'}</span>
               </button>
             </div>
           </div>
@@ -566,13 +633,13 @@ export default function DiscoverPage() {
       </div>
 
       {/* 匹配功能 */}
-      <div className="px-4 py-6">
+      <div className="max-w-5xl mx-auto px-4 py-6">
         {!loading && announcements.length > 0 && (
           <div className="mb-5">
             <AnnouncementCarousel announcements={announcements} autoPlay interval={4000} />
           </div>
         )}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <MatchCard
             title="扔瓶子"
             description="发送漂流瓶"
@@ -598,7 +665,7 @@ export default function DiscoverPage() {
             disabled={isLoadingAction || isMatching}
           />
           <MatchCard
-            title="随机匹配"
+            title="匹配模式"
             description="匹配一个正在匹配中的用户"
             color="bg-gradient-to-br from-blue-600 to-indigo-600"
             icon={Users}
@@ -641,6 +708,37 @@ export default function DiscoverPage() {
                   className="w-full h-40 p-3 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-neutral-50 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
                   maxLength={500}
                 />
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 dark:border-neutral-600 px-3 py-2">
+                  <span className="text-sm text-neutral-600 dark:text-neutral-300">最大被捞次数</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBottleMaxPickCount((v) => Math.max(1, v - 1))}
+                      className="w-7 h-7 rounded border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={bottleMaxPickCount}
+                      onChange={(e) => {
+                        const raw = Number(e.target.value)
+                        if (Number.isNaN(raw)) return
+                        setBottleMaxPickCount(Math.max(1, Math.min(20, raw)))
+                      }}
+                      className="w-16 text-center rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBottleMaxPickCount((v) => Math.min(20, v + 1))}
+                      className="w-7 h-7 rounded border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
                 <div className="flex justify-between items-center mt-3">
                   <span className="text-sm text-neutral-500 dark:text-neutral-400">
                     {bottleContent.length}/500
@@ -754,12 +852,45 @@ export default function DiscoverPage() {
         </div>
       )}
 
+      {showMatchModeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-md bg-white dark:bg-neutral-800 rounded-2xl p-6">
+            <h3 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100 mb-2">选择匹配方式</h3>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-5">该设置对扔瓶子、捞个在线、捞瓶子（以及匹配模式）共用</p>
+
+            <div className="space-y-3">
+              <button
+                onClick={startRandomMode}
+                className="w-full text-left rounded-xl border border-neutral-200 dark:border-neutral-700 p-4 hover:border-blue-400"
+              >
+                <div className="text-base font-medium text-neutral-900 dark:text-neutral-100">免费随机匹配</div>
+                <div className="text-sm text-neutral-500 mt-1">纯随机，不按陌生人设置，不消耗魅力值</div>
+              </button>
+              <button
+                onClick={startPreferenceMode}
+                className="w-full text-left rounded-xl border border-neutral-200 dark:border-neutral-700 p-4 hover:border-purple-400"
+              >
+                <div className="text-base font-medium text-neutral-900 dark:text-neutral-100">按陌生人设置匹配</div>
+                <div className="text-sm text-neutral-500 mt-1">按你的性别/年龄/位置设置匹配，每次消耗魅力值</div>
+              </button>
+            </div>
+
+            <button
+              onClick={() => setShowMatchModeModal(false)}
+              className="w-full mt-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
       {showStrangerModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-3xl p-6">
             <h3 className="text-3xl font-bold text-center text-neutral-800 mb-4">陌生人设置</h3>
             <p className="text-sm text-neutral-500 mb-5 text-center">
-              设置随机匹配筛选条件（捞个在线/随机匹配生效）
+              设置匹配筛选条件（捞个在线/匹配模式生效）
             </p>
 
             <div className="space-y-5">

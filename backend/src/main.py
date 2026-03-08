@@ -9,7 +9,7 @@ from src.database import (
     connect_to_redis,
     close_redis_connection,
 )
-from src.routes import auth, users, chats, matches, bottles, announcements, charm
+from src.routes import auth, users, chats, matches, bottles, announcements, charm, pay
 
 
 @asynccontextmanager
@@ -69,6 +69,7 @@ app.include_router(matches.router, prefix="/api/match", tags=["匹配"])
 app.include_router(bottles.router, prefix="/api/bottles", tags=["漂流瓶"])
 app.include_router(announcements.router, prefix="/api/announcements", tags=["寻人公告"])
 app.include_router(charm.router, prefix="/api/charm", tags=["魅力值"])
+app.include_router(pay.router, prefix="/api/pay", tags=["支付"])
 
 
 @app.get("/")

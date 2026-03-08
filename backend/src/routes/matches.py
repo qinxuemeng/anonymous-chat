@@ -14,6 +14,8 @@ import time
 
 
 router = APIRouter()
+DAILY_PICK_ONLINE_FREE_LIMIT = 10
+DIRECTIONAL_CHARM_COST = 5
 
 
 async def reset_chat_state_on_rematch(db, user_a_id: str, user_b_id: str):
@@ -115,7 +117,14 @@ async def random_match(
             detail=f"今日随机匹配次数已达上限 ({limit}次)"
         )
 
-    queue_key = f"match_queue:random:{match_zone(user)}"
+    use_preferences = bool(getattr(request, "use_preferences", False))
+    if use_preferences and charm_value <= 200:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="魅力值需大于200，才可按陌生人设置定向匹配"
+        )
+
+    queue_key = f"match_queue:random:{match_zone(user)}:{'pref' if use_preferences else 'all'}"
 
     existing_waiting = await db["matches"].find_one(
         {"user_id": user_id, "status": "waiting", "queue": queue_key},
@@ -152,6 +161,12 @@ async def random_match(
             }
         )
 
+    if use_preferences:
+        await db["users"].update_one(
+            {"id": user_id},
+            {"$inc": {"charm_value": -10}, "$set": {"updated_at": datetime.now()}}
+        )
+
     waiting_users = await redis.lrange(queue_key, 0, -1)
 
     matched_user = None
@@ -177,7 +192,7 @@ async def random_match(
             await redis.lrem(queue_key, 0, waiting_user_str)
             continue
 
-        if not is_match_preference_compatible(user, waiting_target_user):
+        if use_preferences and not is_match_preference_compatible(user, waiting_target_user):
             continue
 
         is_blocked = await db["blocks"].find_one({
@@ -290,9 +305,12 @@ async def pick_online(
     today_key = get_today_key(user_id, "pick_online")
     usage = await redis.get(today_key)
     usage_count = int(usage) if usage else 0
-    limit = get_feature_limit(charm_value, "pick_online")
+    # 按产品规则：捞个在线随机模式固定每日免费 10 次
+    limit = DAILY_PICK_ONLINE_FREE_LIMIT
+    use_preferences = bool(getattr(request, "use_preferences", False))
+    free_exhausted = usage_count >= limit
 
-    if usage_count >= limit:
+    if (not use_preferences) and usage_count >= limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"今日捞个在线次数已达上限 ({limit}次)"
@@ -313,6 +331,7 @@ async def pick_online(
 
     current_zone = match_zone(user)
     valid_users = []
+    preferred_users = []
     for uid in online_users:
         uid_str = uid.decode() if isinstance(uid, bytes) else uid
         if uid_str == user_id:
@@ -321,8 +340,6 @@ async def pick_online(
         target_user = await db["users"].find_one({"id": uid_str})
         if target_user and target_user.get("allow_discovery", True):
             if match_zone(target_user) != current_zone:
-                continue
-            if not is_match_preference_compatible(user, target_user):
                 continue
 
             is_blocked = await db["blocks"].find_one({
@@ -334,6 +351,8 @@ async def pick_online(
 
             if not is_blocked:
                 valid_users.append(target_user)
+                if use_preferences and is_match_preference_compatible(user, target_user):
+                    preferred_users.append(target_user)
 
     if not valid_users:
         raise HTTPException(
@@ -341,16 +360,24 @@ async def pick_online(
             detail="暂无符合条件的在线用户"
         )
 
+    selection_pool = preferred_users if preferred_users else valid_users
     if user.get("gender") == "female":
-        high_charm_users = [u for u in valid_users if u["charm_value"] >= 100]
-        selected_user = random.choice(high_charm_users) if high_charm_users else random.choice(valid_users)
+        high_charm_users = [u for u in selection_pool if u["charm_value"] >= 100]
+        selected_user = random.choice(high_charm_users) if high_charm_users else random.choice(selection_pool)
     else:
-        selected_user = random.choice(valid_users)
+        selected_user = random.choice(selection_pool)
 
     await reset_chat_state_on_rematch(db, user_id, selected_user["id"])
 
-    await redis.incr(today_key)
-    await redis.expire(today_key, 86400)
+    if use_preferences:
+        await db["users"].update_one(
+            {"id": user_id},
+            {"$inc": {"charm_value": -DIRECTIONAL_CHARM_COST}, "$set": {"updated_at": datetime.now()}}
+        )
+
+    if not use_preferences:
+        await redis.incr(today_key)
+        await redis.expire(today_key, 86400)
 
     return SuccessResponse(
         message="捞取成功！",
@@ -358,7 +385,9 @@ async def pick_online(
             "user_id": selected_user["id"],
             "nickname": selected_user["nickname"],
             "avatar": selected_user.get("avatar"),
-            "charm_value": selected_user["charm_value"]
+            "charm_value": selected_user["charm_value"],
+            "charm_cost": DIRECTIONAL_CHARM_COST if use_preferences else 0,
+            "free_exhausted": free_exhausted
         }
     )
 
@@ -372,7 +401,13 @@ async def cancel_match(
     db = get_mongodb()
     redis = get_redis()
 
-    for queue_key in ["match_queue:random:green", "match_queue:random:chat", "match_queue:random:normal"]:
+    queue_keys = []
+    async for key in redis.scan_iter(match="match_queue:random:*"):
+        queue_keys.append(key.decode() if isinstance(key, bytes) else key)
+    if not queue_keys:
+        queue_keys = ["match_queue:random:green", "match_queue:random:chat", "match_queue:random:normal"]
+
+    for queue_key in queue_keys:
         waiting_users = await redis.lrange(queue_key, 0, -1)
         for waiting_user_str in waiting_users:
             waiting_user = json.loads(waiting_user_str)

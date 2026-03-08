@@ -165,6 +165,18 @@ async def get_chat_history(
     now = datetime.now()
     base_filter = _non_expired_filter(now)
 
+    # 进入会话即标记来自对方的消息为已读
+    await db["chats"].update_many(
+        {
+            "$and": [
+                {"from_user_id": user_id, "to_user_id": current_user_id, "read": False},
+                base_filter,
+                _visible_for_user_filter(current_user_id)
+            ]
+        },
+        {"$set": {"read": True}}
+    )
+
     # 计算分页
     skip = (page - 1) * page_size
 
@@ -226,10 +238,20 @@ async def get_conversations(current_user_id: str = Depends(get_current_user)):
 
     peer_last_message = {}
     peer_deleted_by_other = {}
+    peer_unread_count = {}
     for msg in messages:
         peer_id = msg["to_user_id"] if msg["from_user_id"] == current_user_id else msg["from_user_id"]
+        if peer_id not in peer_unread_count:
+            peer_unread_count[peer_id] = 0
         if peer_id not in peer_deleted_by_other:
             peer_deleted_by_other[peer_id] = False
+        if (
+            msg.get("to_user_id") == current_user_id
+            and msg.get("from_user_id") == peer_id
+            and not msg.get("read", False)
+            and not msg.get("is_system", False)
+        ):
+            peer_unread_count[peer_id] += 1
         if (
             msg.get("is_system")
             and msg.get("content") == DELETE_NOTICE_CONTENT
@@ -263,7 +285,7 @@ async def get_conversations(current_user_id: str = Depends(get_current_user)):
             "last_message": last_msg.get("content") or "",
             "last_message_type": last_msg.get("type") or "text",
             "last_message_at": last_msg.get("created_at"),
-            "unread_count": 0,
+            "unread_count": peer_unread_count.get(peer_id, 0),
             "is_online": effective_online,
             "deleted_by_other": deleted_by_other
         })
@@ -276,6 +298,22 @@ async def get_conversations(current_user_id: str = Depends(get_current_user)):
         reverse=True
     )
     return SuccessResponse(message="获取成功", data={"conversations": conversations})
+
+
+@router.get("/unread/count", response_model=SuccessResponse)
+async def get_unread_count(current_user_id: str = Depends(get_current_user)):
+    """获取当前用户总未读消息数。"""
+    db = get_mongodb()
+    await _cleanup_expired_messages(db, current_user_id)
+    now = datetime.now()
+    total = await db["chats"].count_documents({
+        "$and": [
+            {"to_user_id": current_user_id, "read": False, "is_system": {"$ne": True}},
+            _non_expired_filter(now),
+            _visible_for_user_filter(current_user_id)
+        ]
+    })
+    return SuccessResponse(message="获取成功", data={"unread_count": total})
 
 
 @router.get("/presence/{target_user_id}", response_model=SuccessResponse)

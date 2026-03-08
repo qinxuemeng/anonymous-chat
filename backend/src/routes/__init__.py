@@ -5,6 +5,7 @@ from . import matches
 from . import bottles
 from . import announcements
 from . import charm
+from . import pay
 
 __all__ = [
     "auth",
@@ -14,4 +15,5 @@ __all__ = [
     "bottles",
     "announcements",
     "charm",
+    "pay",
 ]

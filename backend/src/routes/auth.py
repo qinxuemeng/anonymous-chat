@@ -73,7 +73,7 @@ async def register_user(user_data: UserRegister = Body(...)):
         "age": None,
         "location": None,
         "tags": [],
-        "charm_value": 30,
+        "charm_value": 500,
         "allow_discovery": True,
         "green_mode": False,
         "night_mode": False,
