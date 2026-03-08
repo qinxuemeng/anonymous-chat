@@ -59,6 +59,7 @@ class UserResponse(BaseModel):
     keep_logged_in: bool = False
     english_mode: bool = False
     show_location: bool = False
+    location: Optional[str] = None
     match_gender_preference: str = "any"
     match_location_preference: str = "any"
     match_age_min: int = 18
@@ -77,6 +78,7 @@ class UserUpdate(BaseModel):
     gender: Optional[Gender] = None
     age: Optional[int] = None
     tags: Optional[List[str]] = None
+    location: Optional[str] = None
 
 
 class UserSettingsUpdate(BaseModel):
@@ -87,6 +89,7 @@ class UserSettingsUpdate(BaseModel):
     keep_logged_in: Optional[bool] = None
     english_mode: Optional[bool] = None
     show_location: Optional[bool] = None
+    location: Optional[str] = None
     match_gender_preference: Optional[str] = None
     match_location_preference: Optional[str] = None
     match_age_min: Optional[int] = None
@@ -130,6 +133,8 @@ class ChatMessageResponse(BaseModel):
     content: str
     read: bool = False
     liked: bool = False
+    is_recalled: bool = False
+    recalled_at: Optional[datetime] = None
     created_at: datetime
 
 

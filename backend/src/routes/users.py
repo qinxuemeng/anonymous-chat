@@ -53,6 +53,7 @@ async def update_profile(
             "avatar": updated_user["avatar"],
             "gender": updated_user["gender"],
             "age": updated_user["age"],
+            "location": updated_user.get("location"),
             "charm_value": updated_user["charm_value"],
             "tags": updated_user.get("tags", []),
             "created_at": updated_user["created_at"],

@@ -21,6 +21,7 @@ export default function ChatWindow() {
   const [targetProfile, setTargetProfile] = useState(null)
   const [isTargetOnline, setIsTargetOnline] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [recallingId, setRecallingId] = useState('')
   const [user, setUser] = useState({
     id: userId,
     name: '神秘人',
@@ -45,6 +46,8 @@ export default function ChatWindow() {
         content: msg.content,
         fromMe: msg.from_user_id === currentUser?.id,
         liked: !!msg.liked,
+        read: !!msg.read,
+        isRecalled: !!msg.is_recalled,
         time: formatTime(msg.created_at),
         isSystem: !!msg.is_system,
       }))
@@ -161,6 +164,23 @@ export default function ChatWindow() {
     )
   }
 
+  const recallMessage = async (messageId) => {
+    if (!messageId || recallingId) return
+    setRecallingId(messageId)
+    setSendError('')
+    try {
+      const res = await api.post(`/chats/message/${messageId}/recall`)
+      if (res.data?.success) {
+        await loadChatHistory()
+      }
+    } catch (e) {
+      const rawError = e?.response?.data?.error
+      setSendError(rawError || '撤回失败，请稍后重试')
+    } finally {
+      setRecallingId('')
+    }
+  }
+
   const openProfileModal = async () => {
     try {
       const res = await api.get(`/users/discover/${userId}`)
@@ -259,8 +279,23 @@ export default function ChatWindow() {
                 <div
                   className={`flex items-center gap-1 mt-1 ${message.fromMe ? 'justify-end' : 'justify-start'} px-1`}
                 >
+                  {message.fromMe && !message.isSystem && (
+                    <span className="text-xs text-neutral-400">
+                      {message.isRecalled ? '已撤回' : (message.read ? '已读' : '未读')}
+                    </span>
+                  )}
                   <span className="text-xs text-neutral-400">{message.time}</span>
                   {message.liked && <Heart className="w-3 h-3 text-red-500" />}
+                  {message.fromMe && !message.isSystem && !message.isRecalled && (
+                    <button
+                      type="button"
+                      disabled={recallingId === message.id}
+                      onClick={() => recallMessage(message.id)}
+                      className="ml-1 text-xs text-neutral-400 hover:text-red-500 disabled:opacity-60"
+                    >
+                      {recallingId === message.id ? '撤回中...' : '撤回'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

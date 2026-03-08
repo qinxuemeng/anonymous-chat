@@ -11,6 +11,8 @@ import time
 router = APIRouter()
 CHAT_RETENTION_DAYS = 7
 DELETE_NOTICE_CONTENT = "已被对方删除"
+RECALLED_BY_SELF_CONTENT = "你撤回了一条消息"
+RECALLED_BY_OTHER_CONTENT = "对方撤回了一条消息"
 
 
 async def _cleanup_expired_messages(db, current_user_id: str):
@@ -51,6 +53,12 @@ def _visible_for_user_filter(user_id: str):
             {"hidden_for_users": {"$ne": user_id}}
         ]
     }
+
+
+def _format_message_content_for_user(msg: dict, current_user_id: str) -> str:
+    if msg.get("is_recalled", False):
+        return RECALLED_BY_SELF_CONTENT if msg.get("from_user_id") == current_user_id else RECALLED_BY_OTHER_CONTENT
+    return msg.get("content", "")
 
 
 @router.post("/message", response_model=SuccessResponse)
@@ -146,6 +154,7 @@ async def send_message(
             "content": content,
             "read": False,
             "liked": False,
+            "is_recalled": False,
             "created_at": chat_message["created_at"],
             "expires_at": chat_message["expires_at"]
         }
@@ -203,12 +212,14 @@ async def get_chat_history(
             "from_user_id": msg["from_user_id"],
             "to_user_id": msg["to_user_id"],
             "type": msg["type"],
-            "content": msg["content"],
+            "content": _format_message_content_for_user(msg, current_user_id),
             "read": msg["read"],
             "liked": msg["liked"],
             "created_at": msg["created_at"],
             "expires_at": msg.get("expires_at"),
-            "is_system": msg.get("is_system", False)
+            "is_system": msg.get("is_system", False),
+            "is_recalled": msg.get("is_recalled", False),
+            "recalled_at": msg.get("recalled_at")
         })
 
     return SuccessResponse(
@@ -250,6 +261,7 @@ async def get_conversations(current_user_id: str = Depends(get_current_user)):
             and msg.get("from_user_id") == peer_id
             and not msg.get("read", False)
             and not msg.get("is_system", False)
+            and not msg.get("is_recalled", False)
         ):
             peer_unread_count[peer_id] += 1
         if (
@@ -282,7 +294,7 @@ async def get_conversations(current_user_id: str = Depends(get_current_user)):
             "user_id": peer_id,
             "nickname": peer.get("nickname") or "神秘人",
             "avatar": peer.get("avatar") or "",
-            "last_message": last_msg.get("content") or "",
+            "last_message": _format_message_content_for_user(last_msg, current_user_id),
             "last_message_type": last_msg.get("type") or "text",
             "last_message_at": last_msg.get("created_at"),
             "unread_count": peer_unread_count.get(peer_id, 0),
@@ -308,7 +320,7 @@ async def get_unread_count(current_user_id: str = Depends(get_current_user)):
     now = datetime.now()
     total = await db["chats"].count_documents({
         "$and": [
-            {"to_user_id": current_user_id, "read": False, "is_system": {"$ne": True}},
+            {"to_user_id": current_user_id, "read": False, "is_system": {"$ne": True}, "is_recalled": {"$ne": True}},
             _non_expired_filter(now),
             _visible_for_user_filter(current_user_id)
         ]
@@ -362,6 +374,32 @@ async def delete_conversation(peer_user_id: str, current_user_id: str = Depends(
     })
 
     return SuccessResponse(message="删除成功", data={"hidden_count": result.modified_count})
+
+
+@router.post("/message/{message_id}/recall", response_model=SuccessResponse)
+async def recall_message(message_id: str, current_user_id: str = Depends(get_current_user)):
+    """撤回自己发送的消息（软撤回，双方可见撤回提示）。"""
+    db = get_mongodb()
+    now = datetime.now()
+    message = await db["chats"].find_one({"id": message_id})
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
+
+    if message.get("is_system", False):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="系统消息不可撤回")
+
+    if message.get("from_user_id") != current_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只能撤回自己发送的消息")
+
+    if message.get("is_recalled", False):
+        return SuccessResponse(message="该消息已撤回", data={"id": message_id, "is_recalled": True})
+
+    await db["chats"].update_one(
+        {"id": message_id},
+        {"$set": {"is_recalled": True, "recalled_at": now, "read": True}}
+    )
+
+    return SuccessResponse(message="撤回成功", data={"id": message_id, "is_recalled": True, "recalled_at": now})
 
 
 @router.post("/like", response_model=SuccessResponse)

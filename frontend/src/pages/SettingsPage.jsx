@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import BottomNav from '../components/BottomNav'
 import { useAuth } from '../context/AuthContext'
-import { Moon, Bell, Shield, Lock, Eye, Globe, User, ChevronRight, LogOut, X, Wallet } from 'lucide-react'
+import { Moon, Bell, Shield, Lock, Eye, Globe, User, ChevronRight, LogOut, X, Wallet, MapPin } from 'lucide-react'
 import { api } from '../services/api'
 
 export default function SettingsPage() {
@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [rechargeAmount, setRechargeAmount] = useState(1)
   const [rechargeChannel, setRechargeChannel] = useState('wechat')
   const [rechargeLoading, setRechargeLoading] = useState(false)
+  const [locating, setLocating] = useState(false)
 
   const [settings, setSettings] = useState({
     allowDiscovery: true,
@@ -23,6 +24,7 @@ export default function SettingsPage() {
     keepLoggedIn: false,
     englishMode: false,
     showLocation: false,
+    location: '',
     matchGenderPreference: 'any',
     matchAgeMin: 18,
     matchAgeMax: 70
@@ -39,6 +41,7 @@ export default function SettingsPage() {
       keepLoggedIn: user.keep_logged_in ?? false,
       englishMode: user.english_mode ?? false,
       showLocation: user.show_location ?? false,
+      location: user.location || '',
       matchGenderPreference: user.match_gender_preference || 'any',
       matchAgeMin: user.match_age_min ?? 18,
       matchAgeMax: user.match_age_max ?? 70
@@ -118,6 +121,37 @@ export default function SettingsPage() {
     } finally {
       setRechargeLoading(false)
     }
+  }
+
+  const handleAutoLocate = () => {
+    if (locating) return
+    if (!navigator.geolocation) {
+      setToast('当前浏览器不支持定位')
+      return
+    }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const lat = Number(position.coords.latitude).toFixed(4)
+      const lng = Number(position.coords.longitude).toFixed(4)
+      const text = `经度${lng}, 纬度${lat}`
+      const result = await updateSettings({ location: text })
+      if (result.success) {
+        setSettings((prev) => ({ ...prev, location: text }))
+        setToast('位置已自动更新')
+      } else {
+        setToast(result.error || '位置保存失败')
+      }
+      setLocating(false)
+    }, (error) => {
+      if (error.code === 1) setToast('你拒绝了定位权限')
+      else if (error.code === 2) setToast('定位失败，无法获取位置')
+      else if (error.code === 3) setToast('定位超时，请重试')
+      else setToast('定位失败，请稍后重试')
+      setLocating(false)
+    }, {
+      enableHighAccuracy: false,
+      timeout: 10000
+    })
   }
 
   const toggleSetting = (key) => handleSettingChange(key, !settings[key])
@@ -205,6 +239,27 @@ export default function SettingsPage() {
           <ProfileItem label="性别" value={user?.gender || '保密'} to="/profile" />
           <ProfileItem label="年龄" value={user?.age || '0'} to="/profile" />
           <SettingItem icon={<Eye className="w-5 h-5" />} label="显示位置" value={settings.showLocation} onChange={() => toggleSetting('showLocation')} />
+          <div className="px-4 py-3 border-t border-neutral-200 dark:border-neutral-700">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-neutral-900 dark:text-neutral-100">
+                  <MapPin className="w-4 h-4 text-neutral-500" />
+                  <span>当前位置</span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                  {settings.location || '未获取'}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={locating}
+                onClick={handleAutoLocate}
+                className="shrink-0 px-3 py-1.5 rounded-lg border border-blue-500 text-blue-600 text-sm disabled:opacity-60"
+              >
+                {locating ? '定位中...' : '自动获取'}
+              </button>
+            </div>
+          </div>
           <ProfileItem label="标签" value={Array.isArray(user?.tags) ? user.tags.join('、') : '查看'} to="/profile" />
           <div className="px-4 py-3 flex items-center justify-between border-t border-neutral-200 dark:border-neutral-700">
             <span className="text-neutral-900 dark:text-neutral-100">魅力值</span>
