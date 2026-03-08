@@ -10,6 +10,7 @@ import time
 
 router = APIRouter()
 CHAT_RETENTION_DAYS = 7
+DELETE_NOTICE_CONTENT = "已被对方删除"
 
 
 async def _cleanup_expired_messages(db, current_user_id: str):
@@ -313,7 +314,7 @@ async def delete_conversation(peer_user_id: str, current_user_id: str = Depends(
         "from_user_id": current_user_id,
         "to_user_id": peer_user_id,
         "type": "text",
-        "content": "已被对方删除",
+        "content": DELETE_NOTICE_CONTENT,
         "read": False,
         "liked": False,
         "created_at": now,

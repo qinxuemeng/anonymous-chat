@@ -191,14 +191,21 @@ export default function DiscoverPage() {
   const startMatchingTimer = () => {
     matchingTimerRef.current = setInterval(() => {
       setMatchingTime(prev => {
-        if (prev >= 30) {
-          stopMatching()
-          return prev
-        }
+        if (prev >= 30) return prev
         return prev + 1
       })
     }, 1000)
   }
+
+  useEffect(() => {
+    if (!isMatching) return
+    if (matchingTime < 30) return
+    ;(async () => {
+      await stopMatching(true)
+      setIsLoadingAction(false)
+      showMessage('30秒未匹配到用户，已恢复默认状态', 'info')
+    })()
+  }, [matchingTime, isMatching])
 
   // 轮询匹配状态
   const startPolling = (matchId) => {
@@ -257,7 +264,7 @@ export default function DiscoverPage() {
       pollTimerRef.current = null
     }
 
-    if (shouldCancel && currentMatchIdRef.current && isMatching && !matchedUser) {
+    if (shouldCancel && currentMatchIdRef.current) {
       try {
         await api.post('/match/cancel', { match_id: currentMatchIdRef.current })
       } catch (error) {

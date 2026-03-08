@@ -22,6 +22,18 @@ import random
 router = APIRouter()
 
 
+async def reset_chat_state_on_bottle_connect(db, user_a_id: str, user_b_id: str):
+    """通过捞瓶子建立会话时，重置双方旧会话状态。"""
+    if user_a_id == user_b_id:
+        return
+    await db["chats"].delete_many({
+        "$or": [
+            {"from_user_id": user_a_id, "to_user_id": user_b_id},
+            {"from_user_id": user_b_id, "to_user_id": user_a_id}
+        ]
+    })
+
+
 @router.post("/throw", response_model=SuccessResponse)
 async def throw_bottle(
     bottle_data: BottleCreate,
@@ -132,24 +144,32 @@ async def pick_bottle(
             detail="大海空空如也，稍后再试试吧！"
         )
 
-    # 随机选择一个瓶子
-    selected_bottle_id = random.choice(bottle_ids)
+    now = datetime.now()
+    bottles = await db["bottles"].find({
+        "id": {"$in": bottle_ids},
+        "status": "active",
+        "expires_at": {"$gte": now},
+        "user_id": {"$ne": user_id}
+    }).to_list(length=None)
 
-    # 获取瓶子详情
-    bottle = await db["bottles"].find_one({
-        "id": selected_bottle_id,
-        "status": "active"
-    })
+    if not bottles:
+        # 清理已过期瓶子，避免脏数据影响后续捞取
+        expired = await db["bottles"].find({
+            "id": {"$in": bottle_ids},
+            "expires_at": {"$lt": now},
+            "status": "active"
+        }).to_list(length=None)
+        for item in expired:
+            await db["bottles"].update_one({"id": item["id"]}, {"$set": {"status": "expired"}})
+            await redis.srem("bottle_pool", item["id"])
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="暂无可捞取的他人瓶子，请稍后再试"
+        )
 
-    if not bottle or bottle["expires_at"] < datetime.now():
-        # 移除过期或不存在的瓶子
-        await redis.srem("bottle_pool", selected_bottle_id)
-        if bottle:
-            await db["bottles"].update_one(
-                {"id": selected_bottle_id},
-                {"$set": {"status": "expired"}}
-            )
-        return await pick_bottle(user_id)
+    # 随机选择一个非本人、可用的瓶子
+    bottle = random.choice(bottles)
+    selected_bottle_id = bottle["id"]
 
     # 更新瓶子捞取次数
     new_pick_count = bottle["pick_count"] + 1
@@ -179,6 +199,8 @@ async def pick_bottle(
 
     # 获取瓶子作者信息
     author = await db["users"].find_one({"id": bottle["user_id"]})
+    if author:
+        await reset_chat_state_on_bottle_connect(db, user_id, author["id"])
 
     return SuccessResponse(
         message="捞到瓶子了！",
