@@ -9,7 +9,7 @@ from src.database import (
     connect_to_redis,
     close_redis_connection,
 )
-from src.routes import auth, users, chats, matches, bottles, announcements, charm, pay
+from src.routes import auth, users, chats, matches, bottles, announcements, charm, pay, admin
 
 
 @asynccontextmanager
@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
     # 启动事件
     await connect_to_mongodb()
     await connect_to_redis()
+    await admin.bootstrap_admin_data()
     yield
     # 关闭事件
     await close_mongodb_connection()
@@ -70,6 +71,7 @@ app.include_router(bottles.router, prefix="/api/bottles", tags=["漂流瓶"])
 app.include_router(announcements.router, prefix="/api/announcements", tags=["寻人公告"])
 app.include_router(charm.router, prefix="/api/charm", tags=["魅力值"])
 app.include_router(pay.router, prefix="/api/pay", tags=["支付"])
+app.include_router(admin.router, prefix="/api/admin", tags=["后台管理"])
 
 
 @app.get("/")

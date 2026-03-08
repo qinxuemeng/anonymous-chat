@@ -6,6 +6,7 @@ from . import bottles
 from . import announcements
 from . import charm
 from . import pay
+from . import admin
 
 __all__ = [
     "auth",
@@ -16,4 +17,5 @@ __all__ = [
     "announcements",
     "charm",
     "pay",
+    "admin",
 ]

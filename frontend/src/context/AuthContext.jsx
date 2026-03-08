@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useEffect, useState } from 'react'
+import { createContext, useContext, useReducer, useEffect } from 'react'
 import { api } from '../services/api'
 
 // 认证状态类型
@@ -56,6 +56,48 @@ const AuthContext = createContext()
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(authReducer, initialState)
 
+  const resolveProvinceByCoords = async (lat, lng) => {
+    try {
+      const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`, {
+        headers: { Accept: 'application/json' }
+      })
+      if (!resp.ok) return ''
+      const geo = await resp.json()
+      const addr = geo?.address || {}
+      return addr.state || addr.province || addr.region || addr.city || ''
+    } catch (_) {
+      return ''
+    }
+  }
+
+  const autoUpdateLocation = async () => {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const lat = Number(position.coords.latitude).toFixed(4)
+      const lng = Number(position.coords.longitude).toFixed(4)
+      let location = await resolveProvinceByCoords(lat, lng)
+      if (!location) {
+        location = `经度${lng}, 纬度${lat}`
+      }
+      try {
+        const response = await api.put('/users/settings', { location })
+        if (response.data?.success) {
+          const profileResponse = await api.get('/auth/profile')
+          if (profileResponse.data?.success) {
+            dispatch({ type: SET_USER, payload: profileResponse.data.data })
+          }
+        }
+      } catch (_) {
+        // 静默失败，不打断登录流程
+      }
+    }, () => {
+      // 静默失败，不打断登录流程
+    }, {
+      enableHighAccuracy: false,
+      timeout: 10000
+    })
+  }
+
   // 初始化时检查认证状态
   useEffect(() => {
     const initAuth = async () => {
@@ -66,6 +108,7 @@ export function AuthProvider({ children }) {
           const response = await api.get('/auth/profile')
           if (response.data.success) {
             dispatch({ type: SET_USER, payload: response.data.data })
+            autoUpdateLocation()
             dispatch({ type: SET_LOADING, payload: false })
           } else {
             // 无效token，清除
@@ -101,6 +144,7 @@ export function AuthProvider({ children }) {
           type: LOGIN,
           payload: { user, token: access_token }
         })
+        autoUpdateLocation()
         dispatch({ type: SET_LOADING, payload: false })
         return { success: true, user }
       } else {
@@ -147,6 +191,7 @@ export function AuthProvider({ children }) {
           type: LOGIN,
           payload: { user, token: access_token }
         })
+        autoUpdateLocation()
         dispatch({ type: SET_LOADING, payload: false })
         return { success: true, user }
       } else {
@@ -210,7 +255,11 @@ export function AuthProvider({ children }) {
     try {
       const response = await api.put('/users/profile', userData)
       if (response.data.success) {
-        dispatch({ type: SET_USER, payload: response.data.data })
+        const profileResponse = await api.get('/auth/profile')
+        if (profileResponse.data.success) {
+          dispatch({ type: SET_USER, payload: profileResponse.data.data })
+          return { success: true, user: profileResponse.data.data }
+        }
         return { success: true, user: response.data.data }
       }
       return { success: false, error: response.data.error }

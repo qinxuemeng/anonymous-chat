@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     english_mode: bool = False
     show_location: bool = False
     location: Optional[str] = None
+    role: str = "user"
     match_gender_preference: str = "any"
     match_location_preference: str = "any"
     match_age_min: int = 18

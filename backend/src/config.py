@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # 环境
     node_env: str = "development"
 
+    # 管理员初始化
+    admin_username: str = "superadmin"
+    admin_init_password: str = "superadmin123"
+
     class Config:
         env_file = ".env"
 

@@ -88,3 +88,19 @@ async def get_current_user(
         raise credentials_exception
     await update_online_presence(user_id)
     return user_id
+
+
+async def get_current_admin(
+    user_id: str = Depends(get_current_user),
+):
+    from src.database import get_mongodb
+
+    db = get_mongodb()
+    user = await db["users"].find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
+
+    if user.get("role") == "admin" or user.get("username") == settings.admin_username:
+        return user_id
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")

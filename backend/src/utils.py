@@ -125,6 +125,15 @@ SENSITIVE_WORDS = [
 ]
 
 
+def get_sensitive_words() -> List[str]:
+    return SENSITIVE_WORDS
+
+
+def set_sensitive_words(words: List[str]) -> None:
+    global SENSITIVE_WORDS
+    SENSITIVE_WORDS = [str(w).strip() for w in words if str(w).strip()]
+
+
 def filter_sensitive_words(text: str) -> str:
     """过滤敏感词"""
     filtered_text = text

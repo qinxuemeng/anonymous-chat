@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ProfilePage from './pages/ProfilePage'
 import ChatWindow from './components/ChatWindow'
+import AdminPage from './pages/AdminPage'
 import { useAuth } from './context/AuthContext'
 
 function ProtectedRoute({ children }) {
@@ -20,6 +21,13 @@ function PublicRoute({ children }) {
 }
 
 function App() {
+  function AdminRoute({ children }) {
+    const { isAuthenticated, user } = useAuth()
+    if (!isAuthenticated) return <Navigate to="/login" />
+    const isAdmin = user?.role === 'admin' || user?.username === 'superadmin'
+    return isAdmin ? children : <Navigate to="/discover" />
+  }
+
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-neutral-100 dark:bg-neutral-900">
@@ -71,6 +79,12 @@ function App() {
             <ProtectedRoute>
               <ProfilePage />
             </ProtectedRoute>
+          } />
+
+          <Route path="/admin" element={
+            <AdminRoute>
+              <AdminPage />
+            </AdminRoute>
           } />
         </Routes>
       </div>

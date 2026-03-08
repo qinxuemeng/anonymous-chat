@@ -54,8 +54,16 @@ async def update_profile(
             "gender": updated_user["gender"],
             "age": updated_user["age"],
             "location": updated_user.get("location"),
+            "role": updated_user.get("role", "user"),
             "charm_value": updated_user["charm_value"],
             "tags": updated_user.get("tags", []),
+            "allow_discovery": updated_user.get("allow_discovery", True),
+            "green_mode": updated_user.get("green_mode", False),
+            "night_mode": updated_user.get("night_mode", False),
+            "notification_sound": updated_user.get("notification_sound", True),
+            "keep_logged_in": updated_user.get("keep_logged_in", False),
+            "english_mode": updated_user.get("english_mode", False),
+            "show_location": updated_user.get("show_location", False),
             "created_at": updated_user["created_at"],
             "updated_at": updated_user["updated_at"]
         }
