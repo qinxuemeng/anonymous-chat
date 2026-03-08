@@ -13,6 +13,7 @@ from src.utils import (
     check_feature_permission
 )
 from datetime import datetime, timedelta
+import re
 import random
 import uuid
 
@@ -118,6 +119,48 @@ async def get_charm_ledger(
     rows = await db["charm_ledger"].find({"user_id": user_id}).sort("created_at", -1).skip(skip).limit(page_size).to_list(length=page_size)
     total = await db["charm_ledger"].count_documents({"user_id": user_id})
     return SuccessResponse(message="获取成功", data={"rows": rows, "page": page, "page_size": page_size, "total": total})
+
+
+@router.get("/recharge-records", response_model=SuccessResponse)
+async def get_recharge_records(
+    page: int = 1,
+    page_size: int = 20,
+    user_id: str = Depends(get_current_user)
+):
+    """获取当前用户充值订单记录。"""
+    db = get_mongodb()
+    query = {"user_id": user_id, "status": "paid"}
+    skip = (page - 1) * page_size
+    orders = await db["payment_orders"].find(query).sort("paid_at", -1).skip(skip).limit(page_size).to_list(length=page_size)
+    total = await db["payment_orders"].count_documents(query)
+
+    product_ids = [o.get("product_id") for o in orders if o.get("product_id")]
+    products = await db["products"].find({"id": {"$in": product_ids}}).to_list(length=None) if product_ids else []
+    product_map = {p["id"]: p for p in products}
+
+    rows = []
+    for o in orders:
+        product_id = o.get("product_id", "")
+        product = product_map.get(product_id, {})
+        charm_gain = int(product.get("charm_value", 0)) + int(product.get("bonus_charm", 0))
+        if charm_gain <= 0:
+            m = re.match(r"^charm_(\d+)_direct$", product_id or "")
+            if m:
+                charm_gain = int(m.group(1)) * 100
+        rows.append({
+            "order_no": o.get("order_no"),
+            "amount_cny": o.get("amount_cny", 0),
+            "channel": o.get("channel"),
+            "status": o.get("status"),
+            "paid_at": o.get("paid_at"),
+            "created_at": o.get("created_at"),
+            "charm_gain": charm_gain
+        })
+
+    return SuccessResponse(
+        message="获取成功",
+        data={"rows": rows, "page": page, "page_size": page_size, "total": total}
+    )
 
 
 @router.post("/daily-checkin", response_model=SuccessResponse)

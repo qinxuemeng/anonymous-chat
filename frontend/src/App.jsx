@@ -8,6 +8,7 @@ import RegisterPage from './pages/RegisterPage'
 import ProfilePage from './pages/ProfilePage'
 import ChatWindow from './components/ChatWindow'
 import AdminPage from './pages/AdminPage'
+import RechargeRecordsPage from './pages/RechargeRecordsPage'
 import { useAuth } from './context/AuthContext'
 
 function ProtectedRoute({ children }) {
@@ -80,6 +81,12 @@ function App() {
           <Route path="/profile" element={
             <ProtectedRoute>
               <ProfilePage />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/recharge-records" element={
+            <ProtectedRoute>
+              <RechargeRecordsPage />
             </ProtectedRoute>
           } />
 
