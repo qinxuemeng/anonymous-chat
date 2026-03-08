@@ -25,6 +25,13 @@ export default function AdminPage() {
     return () => clearTimeout(t)
   }, [toast])
 
+  const formatTime = (timeStr) => {
+    if (!timeStr) return '-'
+    const d = new Date(timeStr)
+    if (Number.isNaN(d.getTime())) return '-'
+    return d.toLocaleString('zh-CN', { hour12: false })
+  }
+
   const loadDashboard = async () => {
     const res = await api.get('/admin/dashboard')
     if (res.data?.success) setDashboard(res.data.data)
@@ -161,11 +168,12 @@ export default function AdminPage() {
                   <div key={o.order_no} className="flex items-center justify-between text-sm rounded-lg border border-neutral-200 p-2.5">
                     <div className="min-w-0">
                       <p className="truncate text-neutral-900">{o.order_no}</p>
-                      <p className="text-neutral-500 truncate">{o.nickname || o.username || o.user_id}</p>
+                      <p className="text-neutral-500 truncate">{o.username || o.user_id}</p>
                     </div>
                     <div className="text-right">
                       <p className="font-medium text-neutral-900">¥{o.amount_cny}</p>
                       <p className="text-xs text-neutral-500">{o.channel} · {o.status}</p>
+                      <p className="text-xs text-neutral-400">支付时间：{formatTime(o.paid_at)}</p>
                     </div>
                   </div>
                 ))}

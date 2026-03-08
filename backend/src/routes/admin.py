@@ -293,7 +293,6 @@ async def admin_orders(
             "order_no": r.get("order_no"),
             "user_id": r.get("user_id"),
             "username": u.get("username", ""),
-            "nickname": u.get("nickname", ""),
             "product_id": r.get("product_id"),
             "amount_cny": r.get("amount_cny", 0),
             "channel": r.get("channel"),

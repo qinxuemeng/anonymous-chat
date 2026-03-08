@@ -12,7 +12,7 @@ from src.utils import (
     get_today_key,
     check_feature_permission
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 import uuid
 
@@ -268,10 +268,31 @@ async def recharge_charm(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
     # 简化策略：1元=100魅力值，按整元购买（对应整百魅力值）
+    now = datetime.now()
     charm_gain = int(payload.amount) * 100
+    order_no = f"C{now.strftime('%Y%m%d%H%M%S')}{str(uuid.uuid4().int)[-6:]}"
+
+    # 落支付订单，先直接标记为 paid（后续可平滑切换到真实支付状态机）
+    await db["payment_orders"].insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "order_no": order_no,
+        "product_id": f"charm_{payload.amount}_direct",
+        "amount_cny": int(payload.amount),
+        "channel": payload.channel,
+        "status": "paid",
+        "provider_order_id": None,
+        "provider_trade_no": f"direct_{uuid.uuid4().hex[:12]}",
+        "idempotency_key": None,
+        "expire_at": now + timedelta(minutes=15),
+        "paid_at": now,
+        "created_at": now,
+        "updated_at": now
+    })
+
     await db["users"].update_one(
         {"id": user_id},
-        {"$inc": {"charm_value": charm_gain}, "$set": {"updated_at": datetime.now()}}
+        {"$inc": {"charm_value": charm_gain}, "$set": {"updated_at": now}}
     )
     refreshed = await db["users"].find_one({"id": user_id})
     await db["charm_history"].insert_one({
@@ -281,12 +302,24 @@ async def recharge_charm(
         "change_value": charm_gain,
         "description": f"{'微信' if payload.channel == 'wechat' else '支付宝'}充值",
         "new_value": refreshed["charm_value"],
-        "created_at": datetime.now()
+        "created_at": now
+    })
+    await db["charm_ledger"].insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "change": charm_gain,
+        "balance_after": refreshed["charm_value"],
+        "biz_type": "recharge",
+        "biz_id": order_no,
+        "description": f"{'微信' if payload.channel == 'wechat' else '支付宝'}充值",
+        "meta": {"channel": payload.channel, "amount_cny": int(payload.amount), "source": "charm_recharge"},
+        "created_at": now
     })
 
     return SuccessResponse(
         message="充值成功",
         data={
+            "order_no": order_no,
             "channel": payload.channel,
             "paid_amount": payload.amount,
             "charm_gain": charm_gain,

@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [rechargeAmount, setRechargeAmount] = useState(1)
   const [rechargeChannel, setRechargeChannel] = useState('wechat')
   const [rechargeLoading, setRechargeLoading] = useState(false)
+  const [rechargeRows, setRechargeRows] = useState([])
 
   const [settings, setSettings] = useState({
     allowDiscovery: true,
@@ -55,6 +56,29 @@ export default function SettingsPage() {
     const timer = setTimeout(() => setToast(''), 3000)
     return () => clearTimeout(timer)
   }, [toast])
+
+  useEffect(() => {
+    if (!user) return
+    loadRechargeRows()
+  }, [user?.id])
+
+  const formatTime = (timeStr) => {
+    if (!timeStr) return '-'
+    const d = new Date(timeStr)
+    if (Number.isNaN(d.getTime())) return '-'
+    return d.toLocaleString('zh-CN', { hour12: false })
+  }
+
+  const loadRechargeRows = async () => {
+    try {
+      const res = await api.get('/charm/ledger', { params: { page: 1, page_size: 20 } })
+      if (!res.data?.success) return
+      const rows = (res.data.data?.rows || []).filter((r) => r.biz_type === 'recharge')
+      setRechargeRows(rows)
+    } catch (_) {
+      // ignore
+    }
+  }
 
   const handleSettingChange = async (key, value) => {
     if (loading) return
@@ -113,6 +137,7 @@ export default function SettingsPage() {
         return
       }
       await fetchUserProfile()
+      await loadRechargeRows()
       setToast(`充值成功，+${data.data?.charm_gain || (rechargeAmount * 100)} 魅力值`)
       setShowRechargeModal(false)
     } catch (e) {
@@ -224,6 +249,27 @@ export default function SettingsPage() {
               </button>
               <button className="text-sm text-primary-500" onClick={() => setShowCharmGuide(true)}>魅力值说明</button>
             </div>
+          </div>
+          <div className="px-4 py-3 border-t border-neutral-200 dark:border-neutral-700">
+            <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">我的充值记录</p>
+            {rechargeRows.length === 0 ? (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">暂无充值记录</p>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                {rechargeRows.map((row) => (
+                  <div key={row.id} className="rounded-lg border border-neutral-200 dark:border-neutral-700 px-3 py-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-neutral-900 dark:text-neutral-100">订单号：{row.biz_id || '-'}</span>
+                      <span className="text-emerald-600">+{row.change || 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      <span>{row.meta?.channel === 'wechat' ? '微信' : row.meta?.channel === 'alipay' ? '支付宝' : '-'}</span>
+                      <span>支付时间：{formatTime(row.created_at)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
