@@ -157,6 +157,7 @@ async def admin_users(
     _: str = Depends(get_current_admin)
 ):
     db = get_mongodb()
+    redis = get_redis()
     query = {}
     kw = keyword.strip()
     if kw:
@@ -169,9 +170,15 @@ async def admin_users(
     rows = await db["users"].find(query).sort("created_at", -1).skip((page - 1) * page_size).limit(page_size).to_list(length=page_size)
 
     users = []
+    now_ts = int(datetime.now().timestamp())
+    min_ts = now_ts - 300
+    await redis.zremrangebyscore("online_users:last_seen", 0, min_ts - 1)
     for u in rows:
+        uid = u["id"]
+        score = await redis.zscore("online_users:last_seen", uid)
+        is_online = bool(score and score >= min_ts)
         users.append({
-            "id": u["id"],
+            "id": uid,
             "username": u.get("username"),
             "nickname": u.get("nickname"),
             "role": u.get("role", "user"),
@@ -180,6 +187,7 @@ async def admin_users(
             "allow_discovery": u.get("allow_discovery", True),
             "show_location": u.get("show_location", False),
             "location": u.get("location"),
+            "is_online": is_online,
             "is_active": u.get("is_active", True),
             "created_at": u.get("created_at"),
             "last_login_at": u.get("last_login_at")

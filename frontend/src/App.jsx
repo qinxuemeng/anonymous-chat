@@ -16,8 +16,10 @@ function ProtectedRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const { isAuthenticated } = useAuth()
-  return isAuthenticated ? <Navigate to="/discover" /> : children
+  const { isAuthenticated, user } = useAuth()
+  if (!isAuthenticated) return children
+  const isAdmin = user?.role === 'admin' || user?.username === 'superadmin'
+  return <Navigate to={isAdmin ? '/admin' : '/discover'} />
 }
 
 function App() {
@@ -47,7 +49,7 @@ function App() {
           {/* 主应用页面 - 需要登录 */}
           <Route path="/" element={
             <ProtectedRoute>
-              <Navigate to="/discover" replace />
+              <RootRedirect />
             </ProtectedRoute>
           } />
 
@@ -90,6 +92,12 @@ function App() {
       </div>
     </BrowserRouter>
   )
+}
+
+function RootRedirect() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin' || user?.username === 'superadmin'
+  return <Navigate to={isAdmin ? '/admin' : '/discover'} replace />
 }
 
 export default App

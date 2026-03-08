@@ -154,6 +154,27 @@ export default function AdminPage() {
                 ))}
               </div>
             </div>
+            <div className="col-span-2 md:col-span-4 rounded-2xl bg-white border border-neutral-200 p-4">
+              <h3 className="font-semibold text-neutral-900 mb-3">支付订单</h3>
+              <div className="space-y-2">
+                {orders.map((o) => (
+                  <div key={o.order_no} className="flex items-center justify-between text-sm rounded-lg border border-neutral-200 p-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-neutral-900">{o.order_no}</p>
+                      <p className="text-neutral-500 truncate">{o.nickname || o.username || o.user_id}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-neutral-900">¥{o.amount_cny}</p>
+                      <p className="text-xs text-neutral-500">{o.channel} · {o.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2 mt-3">
+                <button disabled={orderPage <= 1} onClick={() => { const p = orderPage - 1; setOrderPage(p); loadOrders(p) }} className="px-3 py-1.5 rounded border border-neutral-300 disabled:opacity-50">上一页</button>
+                <button onClick={() => { const p = orderPage + 1; setOrderPage(p); loadOrders(p) }} className="px-3 py-1.5 rounded border border-neutral-300">下一页</button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -173,10 +194,17 @@ export default function AdminPage() {
                 <div key={u.id} className="rounded-xl border border-neutral-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-semibold text-neutral-900 truncate">{u.nickname || '未命名'} <span className="text-xs text-neutral-500">(@{u.username})</span></p>
+                      <p className="font-semibold text-neutral-900 truncate">
+                        {u.nickname || '未命名'} <span className="text-xs text-neutral-500">(@{u.username})</span>
+                      </p>
                       <p className="text-xs text-neutral-500 truncate">{u.id}</p>
                     </div>
-                    <div className="text-sm text-neutral-700">魅力值 {u.charm_value}</div>
+                    <div className="text-right">
+                      <p className="text-sm text-neutral-700">魅力值 {u.charm_value}</p>
+                      <p className={`text-xs ${u.is_online ? 'text-emerald-600' : 'text-neutral-400'}`}>
+                        {u.is_online ? '在线' : '离线'}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2 mt-3">
                     <button onClick={() => patchUser(u.id, { is_active: !u.is_active })} className={`px-2.5 py-1 rounded border text-xs ${u.is_active ? 'border-emerald-400 text-emerald-700' : 'border-red-400 text-red-700'}`}>
@@ -221,29 +249,6 @@ export default function AdminPage() {
           <div className="mt-4 rounded-2xl bg-white border border-neutral-200 p-4">订单列表</div>
         )}
 
-        {tab === 'dashboard' ? null : tab === 'words' ? null : (
-          <div className="mt-4 rounded-2xl bg-white border border-neutral-200 p-4">
-            <h3 className="font-semibold text-neutral-900 mb-3">支付订单</h3>
-            <div className="space-y-2">
-              {orders.map((o) => (
-                <div key={o.order_no} className="flex items-center justify-between text-sm rounded-lg border border-neutral-200 p-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-neutral-900">{o.order_no}</p>
-                    <p className="text-neutral-500 truncate">{o.nickname || o.username || o.user_id}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium text-neutral-900">¥{o.amount_cny}</p>
-                    <p className="text-xs text-neutral-500">{o.channel} · {o.status}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2 mt-3">
-              <button disabled={orderPage <= 1} onClick={() => { const p = orderPage - 1; setOrderPage(p); loadOrders(p) }} className="px-3 py-1.5 rounded border border-neutral-300 disabled:opacity-50">上一页</button>
-              <button onClick={() => { const p = orderPage + 1; setOrderPage(p); loadOrders(p) }} className="px-3 py-1.5 rounded border border-neutral-300">下一页</button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
