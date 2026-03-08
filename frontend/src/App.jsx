@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import BottomNav from './components/BottomNav'
-import HomePage from './pages/HomePage'
 import ChatPage from './pages/ChatPage'
 import DiscoverPage from './pages/DiscoverPage'
 import SettingsPage from './pages/SettingsPage'
@@ -17,7 +16,7 @@ function ProtectedRoute({ children }) {
 
 function PublicRoute({ children }) {
   const { isAuthenticated } = useAuth()
-  return isAuthenticated ? <Navigate to="/" /> : children
+  return isAuthenticated ? <Navigate to="/discover" /> : children
 }
 
 function App() {
@@ -40,7 +39,7 @@ function App() {
           {/* 主应用页面 - 需要登录 */}
           <Route path="/" element={
             <ProtectedRoute>
-              <HomePage />
+              <Navigate to="/discover" replace />
             </ProtectedRoute>
           } />
 

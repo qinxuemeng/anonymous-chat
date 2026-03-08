@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import BottomNav from '../components/BottomNav'
 import { useAuth } from '../context/AuthContext'
-import { Moon, Sun, Bell, Shield, Lock, Eye, MessageSquare, Globe, User, ChevronRight, LogOut } from 'lucide-react'
+import { Moon, Bell, Shield, Lock, Eye, Globe, User, ChevronRight, LogOut, X } from 'lucide-react'
 
 export default function SettingsPage() {
   const { user, logout, updateSettings } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState('')
+  const [showCharmGuide, setShowCharmGuide] = useState(false)
 
   const [settings, setSettings] = useState({
     allowDiscovery: true,
@@ -39,8 +41,26 @@ export default function SettingsPage() {
     }
   }, [user])
 
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(''), 3000)
+    return () => clearTimeout(timer)
+  }, [toast])
+
   const handleSettingChange = async (key, value) => {
+    if (loading) return
+
+    if ((user?.charm_value || 0) < 200 && key === 'allowDiscovery') {
+      setToast('魅力值需大于200才可修改陌生人设置')
+      return
+    }
+    if ((user?.charm_value || 0) < 20 && key === 'greenMode') {
+      setToast('魅力值小于20时强制开启绿色模式')
+      return
+    }
+
     setLoading(true)
+    const prevSettings = settings
     setSettings(prev => ({ ...prev, [key]: value }))
 
     if (key === 'nightMode') {
@@ -61,7 +81,11 @@ export default function SettingsPage() {
       showLocation: 'show_location'
     }
 
-    await updateSettings({ [keyMap[key] || key]: value })
+    const result = await updateSettings({ [keyMap[key] || key]: value })
+    if (!result.success) {
+      setSettings(prevSettings)
+      setToast(result.error || '设置更新失败')
+    }
     setLoading(false)
   }
 
@@ -80,6 +104,12 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-neutral-900 pb-24">
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm">
+          {toast}
+        </div>
+      )}
+
       {/* 顶部标题 */}
       <div className="bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
         <div className="max-w-md mx-auto px-4 py-3">
@@ -132,7 +162,7 @@ export default function SettingsPage() {
           <SettingItem
             icon={<Eye className="w-5 h-5" />}
             label='允许被"捞个在线"发现'
-            description=""
+            description={(user?.charm_value || 0) < 200 ? '魅力值需大于200' : ''}
             value={settings.allowDiscovery}
             onChange={() => toggleSetting('allowDiscovery')}
             disabled={user?.charm_value < 200}
@@ -140,9 +170,10 @@ export default function SettingsPage() {
           <SettingItem
             icon={<Shield className="w-5 h-5" />}
             label="绿色模式"
-            description="私聊屏蔽所有敏感词"
-            value={settings.greenMode}
+            description={(user?.charm_value || 0) < 20 ? '魅力值小于20时强制开启' : '私聊屏蔽所有敏感词'}
+            value={(user?.charm_value || 0) < 20 ? true : settings.greenMode}
             onChange={() => toggleSetting('greenMode')}
+            disabled={(user?.charm_value || 0) < 20}
           />
           <SettingItem
             icon={<Moon className="w-5 h-5" />}
@@ -201,7 +232,12 @@ export default function SettingsPage() {
             </span>
             <div className="flex items-center gap-2">
               <span className="text-primary-500 font-medium">{user?.charm_value || 0}</span>
-              <a href="#" className="text-sm text-primary-500">魅力值说明</a>
+              <button
+                className="text-sm text-primary-500"
+                onClick={() => setShowCharmGuide(true)}
+              >
+                魅力值说明
+              </button>
             </div>
           </div>
         </div>
@@ -236,6 +272,57 @@ export default function SettingsPage() {
       </div>
 
       <BottomNav />
+
+      {showCharmGuide && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white dark:bg-neutral-800 rounded-2xl max-h-[85vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-5 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">魅力值说明</h2>
+              <button onClick={() => setShowCharmGuide(false)} className="text-neutral-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-sm text-neutral-700 dark:text-neutral-300">
+              <p>为维护良好的聊天环境，鼓励文明和谐友善的行为。</p>
+              <div>
+                <h3 className="font-semibold mb-2 text-neutral-900 dark:text-neutral-100">魅力值作用</h3>
+                <ol className="list-decimal pl-5 space-y-1">
+                  <li>小于20，强制绿色模式，每日随机匹配最多200次，捞瓶子和捞在线最多2次。</li>
+                  <li>大于35，可发文件，可修改昵称，初始值是30。</li>
+                  <li>大于50，可上传自定义头像，可扔瓶子，可捞瓶子。</li>
+                  <li>大于100，可发布寻人公告，女性用户“捞个在线”会优先捞大于100的用户。</li>
+                  <li>大于200，可修改陌生人设置。</li>
+                  <li>大于200后，每50魅力值增加1次所有功能每天的使用次数。</li>
+                  <li>魅力值越高，所有功能的优先级越高。</li>
+                  <li>魅力值越高，每日与虚拟人物对话的次数越多。</li>
+                </ol>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2 text-neutral-900 dark:text-neutral-100">魅力值获取</h3>
+                <ol className="list-decimal pl-5 space-y-1">
+                  <li>积极文明和谐的发言，系统实时给予相应的魅力值。</li>
+                  <li>系统智能判断行为良好的，给予一定的魅力值。</li>
+                  <li>得到对方点赞将获得对应的魅力值。</li>
+                  <li>每日进入平台自动获取5魅力值。</li>
+                  <li>购买会员，一次获得30魅力值。</li>
+                </ol>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2 text-neutral-900 dark:text-neutral-100">魅力值扣除</h3>
+                <ol className="list-decimal pl-5 space-y-1">
+                  <li>发送违规内容引起别人反感，根据违规内容扣相应的魅力值。</li>
+                  <li>聊天被举报或拉黑，经人工核实有违规行为，一次最少扣5魅力值。</li>
+                  <li>过多无意义发言，刷魅力值等行为，清空魅力值。</li>
+                  <li>上传头像人工审核不通过，一次扣30。</li>
+                  <li>修改昵称人工审核不通过，一次扣20。</li>
+                  <li>扔瓶子人工审核不通过，一次扣5。</li>
+                  <li>上传头像自动审核不通过，一次扣5。</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

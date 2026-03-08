@@ -4,6 +4,12 @@ export default function AnnouncementCarousel({ announcements, autoPlay = true, i
   const [currentIndex, setCurrentIndex] = useState(0)
 
   useEffect(() => {
+    if (currentIndex >= announcements.length) {
+      setCurrentIndex(0)
+    }
+  }, [announcements.length, currentIndex])
+
+  useEffect(() => {
     if (!autoPlay || announcements.length <= 1) return
 
     const timer = setInterval(() => {

@@ -144,6 +144,33 @@ async def login_user(login_data: UserLogin = Body(...)):
         {"$set": {"last_login_at": datetime.now(), "updated_at": datetime.now()}}
     )
 
+    # 每日首次进入平台自动 +5 魅力值
+    day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    existing_reward = await db["charm_history"].find_one({
+        "user_id": user["id"],
+        "action": "login",
+        "created_at": {"$gte": day_start}
+    })
+    if not existing_reward:
+        reward = 5
+        await db["users"].update_one(
+            {"id": user["id"]},
+            {"$inc": {"charm_value": reward}, "$set": {"updated_at": datetime.now()}}
+        )
+        refreshed = await db["users"].find_one({"id": user["id"]})
+        await db["charm_history"].insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "action": "login",
+            "change_value": reward,
+            "description": "每日进入平台奖励",
+            "new_value": refreshed["charm_value"],
+            "created_at": datetime.now()
+        })
+        user = refreshed
+    else:
+        user = await db["users"].find_one({"id": user["id"]})
+
     # 创建访问令牌
     access_token = create_access_token(data={"sub": user["id"]})
 

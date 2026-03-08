@@ -73,7 +73,8 @@ def get_feature_limit(charm_value: int, feature: str) -> int:
         "pick_bottle": 10,
         "throw_bottle": 10,
         "pick_online": 2,
-        "send_file": 50
+        "send_file": 50,
+        "virtual_chat": 10
     }
 
     base_limit = base_limits.get(feature, 0)
@@ -84,8 +85,10 @@ def get_feature_limit(charm_value: int, feature: str) -> int:
         return base_limit + additional
 
     # 受限用户
-    if charm_value < 20 and feature in ["match", "pick_online"]:
-        return 2 if feature == "pick_online" else 200
+    if charm_value < 20 and feature in ["match", "pick_online", "pick_bottle"]:
+        if feature == "match":
+            return 200
+        return 2
 
     return base_limit
 

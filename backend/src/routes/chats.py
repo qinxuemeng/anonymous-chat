@@ -36,7 +36,8 @@ async def send_message(
 
     # 获取发送用户的设置
     from_user = await db["users"].find_one({"id": user_id})
-    green_mode = from_user.get("green_mode", False)
+    # 魅力值<20 强制绿色模式
+    green_mode = from_user.get("green_mode", False) or from_user.get("charm_value", 0) < 20
     english_mode = from_user.get("english_mode", False)
 
     # 内容过滤

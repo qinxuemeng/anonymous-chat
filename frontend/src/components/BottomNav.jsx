@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom'
-import { Compass, UserRound, MessageSquare, Settings } from 'lucide-react'
+import { Compass, MessageSquare, Settings } from 'lucide-react'
 
 const navItems = [
   {
@@ -7,12 +7,6 @@ const navItems = [
     path: '/discover',
     label: '发现',
     icon: Compass,
-  },
-  {
-    id: 'home',
-    path: '/',
-    label: '遇见',
-    icon: UserRound,
   },
   {
     id: 'chat',
@@ -31,12 +25,7 @@ const navItems = [
 export default function BottomNav() {
   const location = useLocation()
 
-  const isActive = (path) => {
-    if (path === '/') {
-      return location.pathname === '/'
-    }
-    return location.pathname.startsWith(path)
-  }
+  const isActive = (path) => location.pathname.startsWith(path)
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-neutral-800 border-t border-neutral-200 dark:border-neutral-700 z-50">

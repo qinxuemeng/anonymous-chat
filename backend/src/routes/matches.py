@@ -281,10 +281,10 @@ async def pick_online(
             detail="暂无符合条件的在线用户"
         )
 
-    # 优先匹配魅力值>=100的用户
-    high_charm_users = [u for u in valid_users if u["charm_value"] >= 100]
-    if high_charm_users:
-        selected_user = random.choice(high_charm_users)
+    # 女性用户“捞个在线”优先匹配魅力值>=100的用户
+    if user.get("gender") == "female":
+        high_charm_users = [u for u in valid_users if u["charm_value"] >= 100]
+        selected_user = random.choice(high_charm_users) if high_charm_users else random.choice(valid_users)
     else:
         selected_user = random.choice(valid_users)
 

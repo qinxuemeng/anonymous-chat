@@ -93,7 +93,7 @@ export default function HomePage() {
       {/* 公告轮播区 */}
       {announcements.length > 0 && (
         <div className="px-4 py-4">
-          <AnnouncementCarousel announcements={announcements} />
+          <AnnouncementCarousel announcements={announcements} autoPlay interval={4000} />
         </div>
       )}
 

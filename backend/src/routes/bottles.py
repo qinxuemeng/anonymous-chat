@@ -196,8 +196,10 @@ async def pick_bottle(
             "bottle_id": bottle["id"],
             "content": bottle["content"],
             "images": bottle["images"],
+            "author_id": author["id"] if author else None,
             "author_nickname": author["nickname"] if author else "匿名",
             "author_avatar": author.get("avatar") if author else None,
+            "author_gender": author.get("gender", "secret") if author else "secret",
             "created_at": bottle["created_at"]
         }
     )

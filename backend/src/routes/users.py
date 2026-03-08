@@ -9,7 +9,7 @@ from src.schemas import (
     ErrorResponse
 )
 from src.security import get_current_user
-from src.utils import validate_image, save_uploaded_file
+from src.utils import validate_image, save_uploaded_file, check_feature_permission
 from datetime import datetime
 import os
 
@@ -76,6 +76,22 @@ async def update_settings(
         )
 
     update_data = settings.dict(exclude_unset=True)
+    charm_value = user.get("charm_value", 0)
+
+    # 魅力值<200 不能修改陌生人设置（allow_discovery）
+    if "allow_discovery" in update_data and not check_feature_permission(charm_value, "edit_settings"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="魅力值需大于200才可修改陌生人设置"
+        )
+
+    # 魅力值<20 强制绿色模式
+    if charm_value < 20:
+        update_data["green_mode"] = True
+
+    if not update_data:
+        return SuccessResponse(message="无可更新设置")
+
     update_data["updated_at"] = datetime.now()
 
     await db["users"].update_one(

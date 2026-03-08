@@ -13,6 +13,8 @@ export default function DiscoverPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalType, setModalType] = useState(null)
   const [bottleContent, setBottleContent] = useState('')
+  const [pickedBottle, setPickedBottle] = useState(null)
+  const [onlineUser, setOnlineUser] = useState(null)
   const [isLoadingAction, setIsLoadingAction] = useState(false)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('info')
@@ -206,10 +208,20 @@ export default function DiscoverPage() {
       const response = await api.post('/match/online', { type: 'online' })
       if (response.data.success) {
         const data = response.data.data
-        showMessage(`捞到了 ${data.nickname}！正在跳转到聊天...`, 'success')
-        setTimeout(() => {
-          navigate(`/chat/${data.user_id}`)
-        }, 1500)
+        const detailResp = await api.get(`/users/discover/${data.user_id}`)
+        const detail = detailResp.data?.data || {}
+        setOnlineUser({
+          id: data.user_id,
+          nickname: detail.nickname || data.nickname || '匿名用户',
+          avatar: detail.avatar || data.avatar || '',
+          charm_value: detail.charm_value ?? data.charm_value ?? 0,
+          gender: detail.gender || '保密',
+          age: detail.age ?? '-',
+          city: detail.city || '',
+          tags: Array.isArray(detail.tags) ? detail.tags : []
+        })
+        setModalType('online')
+        setIsModalOpen(true)
       }
     } catch (error) {
       showMessage(error.response?.data?.error || '捞取失败，请稍后重试', 'error')
@@ -252,8 +264,16 @@ export default function DiscoverPage() {
       const response = await api.post('/bottles/pick')
       if (response.data.success) {
         const data = response.data.data
-        setModalType('bottle')
-        setBottleContent(data.content)
+        const genderMap = { male: '男', female: '女', secret: '保密' }
+        setPickedBottle({
+          bottle_id: data.bottle_id,
+          content: data.content,
+          author_id: data.author_id || null,
+          author_nickname: data.author_nickname || '匿名',
+          author_gender: genderMap[data.author_gender] || '保密',
+          created_at: data.created_at
+        })
+        setModalType('pickedBottle')
         setIsModalOpen(true)
       }
     } catch (error) {
@@ -261,6 +281,43 @@ export default function DiscoverPage() {
     } finally {
       setIsLoadingAction(false)
     }
+  }
+
+  const handleChatPickedBottle = () => {
+    if (!pickedBottle?.author_id) {
+      showMessage('该瓶子暂不支持发起聊天', 'error')
+      return
+    }
+    setIsModalOpen(false)
+    navigate(`/chat/${pickedBottle.author_id}`)
+  }
+
+  const handleReportBottle = () => {
+    showMessage('举报已受理，我们会尽快审核', 'success')
+    setIsModalOpen(false)
+  }
+
+  const handleChatOnlineUser = () => {
+    if (!onlineUser?.id) {
+      return
+    }
+    setIsModalOpen(false)
+    navigate(`/chat/${onlineUser.id}`)
+  }
+
+  const handleNextOnlineUser = async () => {
+    await handlePickOnline()
+  }
+
+  const formatBottleTime = (timeStr) => {
+    if (!timeStr) return ''
+    const d = new Date(timeStr)
+    if (Number.isNaN(d.getTime())) return ''
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const hour = String(d.getHours()).padStart(2, '0')
+    const minute = String(d.getMinutes()).padStart(2, '0')
+    return `${month}月${day}日 ${hour}:${minute}`
   }
 
   return (
@@ -417,7 +474,7 @@ export default function DiscoverPage() {
       <div className="px-4 py-6">
         {!loading && announcements.length > 0 && (
           <div className="mb-5">
-            <AnnouncementCarousel announcements={announcements} />
+            <AnnouncementCarousel announcements={announcements} autoPlay interval={4000} />
           </div>
         )}
         <div className="grid grid-cols-2 gap-4">
@@ -459,10 +516,18 @@ export default function DiscoverPage() {
       {/* 模态框 */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-neutral-800 rounded-2xl w-full max-w-sm p-6">
+          <div className={`bg-white dark:bg-neutral-800 rounded-2xl w-full p-6 ${
+            modalType === 'online' ? 'max-w-lg' : 'max-w-md'
+          }`}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-                {modalType === 'throw' ? '扔瓶子' : '捞到瓶子'}
+                {modalType === 'throw'
+                  ? '扔瓶子'
+                  : modalType === 'pickedBottle'
+                  ? '捞瓶子'
+                  : modalType === 'online'
+                  ? '捞个在线'
+                  : '捞到瓶子'}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -494,6 +559,84 @@ export default function DiscoverPage() {
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : null}
                     投入大海
+                  </button>
+                </div>
+              </>
+            ) : modalType === 'pickedBottle' && pickedBottle ? (
+              <>
+                <div className="border border-neutral-200 bg-white p-3 min-h-[300px]">
+                  <p className="text-2xl leading-relaxed text-neutral-800 whitespace-pre-wrap break-words">
+                    {pickedBottle.content}
+                  </p>
+                </div>
+                <div className="text-right text-neutral-500 text-xl leading-snug py-4">
+                  <div>
+                    {pickedBottle.author_nickname}
+                    <span className="ml-4">{pickedBottle.author_gender}</span>
+                  </div>
+                  <div>{formatBottleTime(pickedBottle.created_at)}</div>
+                </div>
+                <div className="-mx-6 -mb-6 grid grid-cols-2 border-t border-neutral-200">
+                  <button
+                    onClick={handleChatPickedBottle}
+                    className="py-4 text-3xl font-semibold text-blue-500 border-r border-neutral-200"
+                  >
+                    聊聊看
+                  </button>
+                  <button
+                    onClick={handleReportBottle}
+                    className="py-4 text-3xl font-semibold text-red-500"
+                  >
+                    举报
+                  </button>
+                </div>
+              </>
+            ) : modalType === 'online' && onlineUser ? (
+              <>
+                <div className="flex items-center gap-4 mb-4">
+                  {onlineUser.avatar ? (
+                    <img src={onlineUser.avatar} alt={onlineUser.nickname} className="w-24 h-24 rounded-xl object-cover bg-neutral-100" />
+                  ) : (
+                    <div className="w-24 h-24 rounded-xl bg-neutral-100 flex items-center justify-center">
+                      <User className="w-10 h-10 text-neutral-500" />
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="text-4xl font-bold text-neutral-700 mb-2">{onlineUser.nickname}</h3>
+                    {onlineUser.tags.slice(0, 1).map((tag) => (
+                      <span key={tag} className="inline-block px-4 py-1 rounded-full bg-sky-500 text-white text-xl">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-neutral-200 mb-4">
+                  {[
+                    ['性别', onlineUser.gender],
+                    ['年龄', onlineUser.age],
+                    ['城市', onlineUser.city || ''],
+                    ['魅力值', onlineUser.charm_value]
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between items-center py-3 border-b border-neutral-200">
+                      <span className="text-2xl font-medium text-neutral-600">{label}</span>
+                      <span className={`text-2xl ${label === '性别' ? 'text-sky-500' : 'text-neutral-400'} font-semibold`}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="-mx-6 -mb-6 grid grid-cols-2 border-t border-neutral-200">
+                  <button
+                    onClick={handleNextOnlineUser}
+                    className="py-4 text-3xl font-semibold text-orange-500 border-r border-neutral-200"
+                  >
+                    下一个
+                  </button>
+                  <button
+                    onClick={handleChatOnlineUser}
+                    className="py-4 text-3xl font-semibold text-blue-500"
+                  >
+                    聊聊看
                   </button>
                 </div>
               </>
